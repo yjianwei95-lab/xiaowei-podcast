@@ -1,0 +1,36 @@
+<div class="hero">
+  <h1>🎙️ 小伟播客</h1>
+  <p class="subtitle">上传你的声音 · 分享你的故事</p>
+  <div class="stats-bar">
+    <span>📚 <%= stats.totalPodcasts %> 个节目</span>
+    <span>▶️ <%= stats.totalPlayed %> 次播放</span>
+    <span>👥 <%= stats.totalVisitors %> 次访问</span>
+  </div>
+  <a href="/upload" class="btn btn-lg">📤 上传你的声音</a>
+</div>
+
+<div class="podcast-grid">
+  <% if (podcasts && podcasts.length > 0) {
+    podcasts.forEach(function(p) { %>
+  <a href="/play/<%= p.uuid %>" class="podcast-card">
+    <div class="card-icon">🎧</div>
+    <div class="card-body">
+      <h3><%= p.title %></h3>
+      <p class="card-desc"><%= p.description ? p.description.slice(0, 60) + (p.description.length > 60 ? '...' : '') : '暂无描述' %></p>
+      <div class="card-meta">
+        <span>👤 <%= p.uploader_name %></span>
+        <span>▶️ <%= p.play_count %> 次播放</span>
+        <span>📅 <%= p.created_at.slice(0, 10) %></span>
+        <span>📦 <%= p.file_size ? (p.file_size / 1048576).toFixed(1) + ' MB' : '未知大小' %></span>
+      </div>
+    </div>
+  </a>
+  <% });
+  } else { %>
+  <div class="empty-state">
+    <p>📭 还没有人上传声音</p>
+    <p>来做第一个分享者吧！</p>
+    <a href="/upload" class="btn">📤 上传声音</a>
+  </div>
+  <% } %>
+</div>
