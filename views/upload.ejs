@@ -1,0 +1,52 @@
+<div class="upload-page">
+  <h1>📤 上传你的声音</h1>
+  <% if (typeof uploaded !== 'undefined' && uploaded) { %>
+  <div class="upload-success">
+    <p>✅ 上传成功！你的节目 <strong>《<%= uploaded.title %>》</strong> 已上线</p>
+    <p>分享链接：<a href="/play/<%= uploaded.uuid %>" target="_blank"><%= req ? req.headers.host : 'localhost:' + 3000 %>/play/<%= uploaded.uuid %></a></p>
+    <a href="/upload" class="btn">再传一个</a>
+    <a href="/play/<%= uploaded.uuid %>" class="btn btn-secondary">去看看</a>
+  </div>
+  <% } else { %>
+  <form method="POST" action="/upload" enctype="multipart/form-data" class="upload-form">
+    <div class="form-group">
+      <label for="title">节目名称 *</label>
+      <input type="text" id="title" name="title" required placeholder="给你的声音起个名字">
+    </div>
+    <div class="form-group">
+      <label for="description">节目简介</label>
+      <textarea id="description" name="description" rows="3" placeholder="简单介绍一下内容..."></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="uploader_name">你的名字</label>
+        <input type="text" id="uploader_name" name="uploader_name" placeholder="匿名">
+      </div>
+      <div class="form-group">
+        <label for="uploader_email">邮箱（选填）</label>
+        <input type="email" id="uploader_email" name="uploader_email" placeholder="不会公开显示">
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="audio">选择音频文件 *</label>
+      <div class="file-input-wrap">
+        <input type="file" id="audio" name="audio" accept=".mp3,.wav,.ogg,.aac,.flac,.m4a" required>
+        <span class="file-name" id="file-name">点击上方按钮选择音频文件（mp3/wav/ogg/aac/flac，最大 200MB）</span>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-lg btn-full">🚀 上传发布</button>
+    <p class="form-tip">上传即表示你同意内容合法合规，平台有权管理不当内容。</p>
+  </form>
+  <% } %>
+</div>
+
+<script>
+  document.getElementById('audio')?.addEventListener('change', function(e) {
+    var name = e.target.files[0]?.name || '';
+    var size = e.target.files[0]?.size || 0;
+    var el = document.getElementById('file-name');
+    if (name) {
+      el.textContent = name + ' (' + (size / 1048576).toFixed(1) + ' MB)';
+    }
+  });
+</script>
