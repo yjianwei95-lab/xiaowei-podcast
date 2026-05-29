@@ -1,0 +1,36 @@
+<div class="player-page">
+  <div class="player-card">
+    <div class="player-icon">🎧</div>
+    <h1><%= podcast.title %></h1>
+    <% if (podcast.description) { %>
+    <p class="player-desc"><%= podcast.description %></p>
+    <% } %>
+    <div class="player-meta">
+      <span>👤 <%= podcast.uploader_name %></span>
+      <span>▶️ <%= podcast.play_count %> 次播放</span>
+      <span>📅 <%= podcast.created_at.slice(0, 10) %></span>
+      <span>📦 <%= (podcast.file_size / 1048576).toFixed(1) %> MB</span>
+    </div>
+    <audio id="audio-player" class="audio-player" controls preload="metadata">
+      <source src="/uploads/<%= podcast.filename %>">
+      您的浏览器不支持音频播放
+    </audio>
+  </div>
+  <div class="share-area">
+    <h3>🔗 分享这个节目</h3>
+    <div class="share-link-box">
+      <input type="text" id="share-link" value="<%= req ? req.headers.host : '' %>/play/<%= podcast.uuid %>" readonly>
+      <button class="btn" onclick="copyLink()">复制链接</button>
+    </div>
+  </div>
+  <a href="/" class="back-link">← 返回首页</a>
+</div>
+
+<script>
+function copyLink() {
+  var input = document.getElementById('share-link');
+  input.select();
+  document.execCommand('copy');
+  alert('链接已复制！');
+}
+</script>
