@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof title !== 'undefined' && title ? title + ' - ' : '' %>小伟播客</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="container">
+      <a href="/" class="logo">🎙️ 小伟播客</a>
+      <div class="nav-links">
+        <a href="/">首页</a>
+        <a href="/upload">上传声音</a>
+        <a href="/admin/login" class="nav-admin">管理</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container">
+    <% if (typeof flash !== 'undefined' && flash) { %>
+      <div class="flash <%= flash.category %>"><%= flash.message %></div>
+    <% } %>
+    <%- content %>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>🎙️ 小伟播客 · 用声音连接你我</p>
+    </div>
+  </footer>
+</body>
+</html>

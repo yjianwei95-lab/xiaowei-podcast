@@ -1,0 +1,8 @@
+version: "3"
+agent:
+    authtoken: 3EOnjKtJiVyE5a8yJkRplcQpHIt_4MrYv79t55swK6vSwzVVN
+tunnels:
+  podcast:
+    proto: http
+    addr: 3000
+    pooling_enabled: true
