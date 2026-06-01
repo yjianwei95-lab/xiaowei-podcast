@@ -58,6 +58,15 @@ a:hover { color: var(--accent-hover); }
   border-radius: 20px;
   font-size: 0.8rem !important;
 }
+.nav-user {
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+.nav-logout {
+  font-size: 0.8rem;
+  color: var(--red) !important;
+}
 
 /* ─── Hero ────────────────────────────── */
 .hero {
@@ -81,6 +90,12 @@ a:hover { color: var(--accent-hover); }
   font-size: 0.9rem;
 }
 .btn-lg { padding: 12px 32px; font-size: 1rem; }
+
+/* ─── 登录/注册 ──────────────────────── */
+.login-page { max-width: 400px; margin: 40px auto; padding: 0 16px; }
+.login-page h1 { font-size: 1.4rem; margin-bottom: 20px; text-align: center; }
+.auth-form { display: flex; flex-direction: column; gap: 16px; }
+.auth-hint { text-align: center; margin-top: 16px; font-size: 0.85rem; color: var(--text-muted); }
 
 /* ─── Flash ───────────────────────────── */
 .flash {

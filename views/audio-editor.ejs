@@ -1,0 +1,1159 @@
+<div class="audio-editor">
+  <h1>🎵 音频在线编辑</h1>
+  <p class="editor-subtitle">导入音频后进行裁剪、音量调节、淡入淡出等处理</p>
+  <% if (podcast && podcastId) { %>
+  <div class="podcast-context" id="podcastMeta" data-id="<%= podcast.id %>" data-filename="<%= podcast.filename %>">
+    当前编辑: <strong><%= podcast.title %></strong>
+    <span class="podcast-meta">(<%= podcast.original_name %> · <%= (podcast.file_size / 1048576).toFixed(1) %> MB)</span>
+    <span style="font-size:12px;color:var(--text-muted);margin-left:12px">修改后点击「保存到播客」</span>
+  </div>
+  <% } %>
+
+  <div class="editor-layout">
+    <!-- 左侧工具栏 -->
+    <div class="toolbar">
+      <!-- 文件导入 -->
+      <div class="tool-section">
+        <h3>📂 文件</h3>
+        <div class="upload-area" id="uploadArea">
+          <input type="file" id="audioFile" accept="audio/*" style="display:none">
+          <div class="upload-btn" onclick="document.getElementById('audioFile').click()">
+            <span style="font-size:32px">📤</span>
+            <span>点击导入音频</span>
+            <span style="font-size:12px;color:#999">支持 MP3, WAV, OGG, M4A</span>
+          </div>
+        </div>
+        <div id="fileInfo" style="display:none;padding:12px;background:rgba(52,211,153,0.1);border-radius:8px;border:1px solid var(--green)">
+          <div style="font-weight:600;font-size:14px" id="fileName">-</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px" id="fileSize">-</div>
+          <div style="font-size:12px;color:var(--text-muted)" id="fileDur">-</div>
+        </div>
+      </div>
+
+      <!-- 裁剪 -->
+      <div class="tool-section" id="trimTools" style="display:none">
+        <h3>✂️ 裁剪</h3>
+        <div class="trim-controls">
+          <div class="trim-row">
+            <label>起始</label>
+            <div class="trim-input-group">
+              <input type="number" id="trimStart" class="trim-input" min="0" step="0.1" value="0">
+              <span class="trim-unit">秒</span>
+            </div>
+          </div>
+          <div class="trim-row">
+            <label>结束</label>
+            <div class="trim-input-group">
+              <input type="number" id="trimEnd" class="trim-input" min="0" step="0.1" value="0">
+              <span class="trim-unit">秒</span>
+            </div>
+          </div>
+          <div class="trim-row">
+            <label>选区</label>
+            <span id="trimDuration" style="color:var(--accent);font-weight:600;font-size:13px">0 秒</span>
+          </div>
+          <button class="tool-btn primary" onclick="applyTrimPreview()">👂 预览裁剪</button>
+        </div>
+      </div>
+
+      <!-- 音量 -->
+      <div class="tool-section" id="volumeTools" style="display:none">
+        <h3>🔊 音量</h3>
+        <div class="volume-control">
+          <input type="range" id="volumeSlider" class="volume-slider" min="0" max="200" value="100">
+          <div class="volume-label">
+            <span>0%</span>
+            <span id="volumeDisplay">100%</span>
+            <span>200%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 淡入淡出 -->
+      <div class="tool-section" id="fadeTools" style="display:none">
+        <h3>🌊 淡入淡出</h3>
+        <div class="fade-controls">
+          <div class="fade-row">
+            <label>淡入</label>
+            <div class="trim-input-group">
+              <input type="number" id="fadeInDuration" class="trim-input" min="0" max="30" step="0.5" value="0">
+              <span class="trim-unit">秒</span>
+            </div>
+          </div>
+          <div class="fade-row">
+            <label>淡出</label>
+            <div class="trim-input-group">
+              <input type="number" id="fadeOutDuration" class="trim-input" min="0" max="30" step="0.5" value="0">
+              <span class="trim-unit">秒</span>
+            </div>
+          </div>
+          <button class="tool-btn primary" onclick="applyFadePreview()">👂 预览淡入淡出</button>
+        </div>
+      </div>
+
+      <!-- 效果预览与导出 -->
+      <div class="tool-section" id="exportTools" style="display:none">
+        <h3>💾 导出</h3>
+        <div class="export-buttons">
+          <button class="tool-btn" onclick="previewProcessed()">👂 预览全部效果</button>
+          <button class="tool-btn primary" onclick="exportProcessed()">📥 导出到本地</button>
+          <% if (podcast && podcastId) { %>
+          <button class="tool-btn save-btn" id="saveToPodcastBtn" onclick="saveToPodcast()">💾 保存到播客</button>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧编辑区 -->
+    <div class="editor-main">
+      <!-- 波形图 -->
+      <div class="waveform-card">
+        <div id="noFileMsg">
+          <div class="no-file-icon">🎵</div>
+          <p>点击左侧「点击导入音频」开始编辑</p>
+        </div>
+        <div id="waveformContainer" style="display:none">
+          <div class="waveform-header">
+            <span id="currentTimeDisplay">00:00.0</span>
+            <span id="totalTimeDisplay">00:00.0</span>
+          </div>
+          <div class="waveform-wrapper">
+            <canvas id="waveCanvas" height="180"></canvas>
+            <!-- 选区遮罩 -->
+            <div class="region-mask region-left" id="regionLeft"></div>
+            <div class="region-mask region-right" id="regionRight"></div>
+          </div>
+          <div class="waveform-ruler" id="ruler"></div>
+        </div>
+        <div id="processingOverlay" style="display:none">
+          <div class="processing-spinner"></div>
+          <div>处理中...</div>
+        </div>
+      </div>
+
+      <!-- 处理状态 -->
+      <div id="statusBar" style="display:none"></div>
+
+      <!-- 播放器 -->
+      <div class="player-bar" id="playerBar" style="display:none">
+        <div class="player-bar-inner">
+          <button class="player-btn" id="playBtn" onclick="togglePlayback()">▶️</button>
+          <div class="player-progress">
+            <div class="player-progress-track" onclick="seekPlayer(event)">
+              <div class="player-progress-fill" id="progressFill"></div>
+            </div>
+          </div>
+          <span class="player-time" id="playTime">00:00.0 / 00:00.0</span>
+          <button class="player-btn" onclick="stopPlayback()">⏹</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ────── 状态 ──────
+var audioCtx = null;
+var originalBuffer = null;
+var originalDuration = 0;
+var processedBuffer = null;   // 当前处理后的 AudioBuffer
+var isPlaying = false;
+var playSource = null;
+var playStartTime = 0;
+var playOffset = 0;
+var playerDuration = 0;
+
+// 裁剪参数（始终相对于原始音频）
+var totalDuration = 0;
+var trimStart = 0;
+var trimEnd = 0;
+
+// 当前处理参数
+var currentVolume = 1.0;
+var currentFadeIn = 0;
+var currentFadeOut = 0;
+
+// 是否已预览（有已处理的缓存）
+var hasProcessed = false;
+
+// 从播客加载（由隐藏字段传入）
+var podcastId = (document.getElementById('podcastMeta') && document.getElementById('podcastMeta').dataset.id) || '';
+var podcastFilename = (document.getElementById('podcastMeta') && document.getElementById('podcastMeta').dataset.filename) || '';
+
+// ────── 文件导入 ──────
+document.getElementById('audioFile').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+
+  document.getElementById('fileInfo').style.display = 'block';
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileSize').textContent = '大小: ' + formatSize(file.size);
+  document.getElementById('noFileMsg').style.display = 'none';
+  document.getElementById('waveformContainer').style.display = 'block';
+  document.getElementById('trimTools').style.display = 'block';
+  document.getElementById('volumeTools').style.display = 'block';
+  document.getElementById('fadeTools').style.display = 'block';
+  document.getElementById('exportTools').style.display = 'block';
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx.decodeAudioData(e.target.result, function(buf) {
+        originalBuffer = buf;
+        originalDuration = buf.duration;
+        totalDuration = originalDuration;
+        trimStart = 0;
+        trimEnd = originalDuration;
+        processedBuffer = null;
+        hasProcessed = false;
+        document.getElementById('fileDur').textContent = '时长: ' + formatTime(totalDuration);
+        document.getElementById('trimEnd').value = originalDuration.toFixed(1);
+        document.getElementById('trimStart').value = '0';
+        document.getElementById('trimEnd').max = originalDuration.toFixed(1);
+        document.getElementById('trimStart').max = originalDuration.toFixed(1);
+        updateTrimDuration();
+        drawWaveform(buf, 0, originalDuration);
+        buildRuler(originalDuration);
+        // 重置效果参数
+        document.getElementById('volumeSlider').value = 100;
+        currentVolume = 1.0;
+        document.getElementById('fadeInDuration').value = 0;
+        document.getElementById('fadeOutDuration').value = 0;
+        currentFadeIn = 0;
+        currentFadeOut = 0;
+        stopPlayback();
+        hideStatus();
+      }, function() {
+        showStatus('❌ 无法解码音频文件，请检查格式', 'error');
+      });
+    } catch(e2) {
+      showStatus('❌ 音频处理出错: ' + e2.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// ────── 波形绘制 ──────
+function drawWaveform(buffer, regionStart, regionEnd) {
+  var canvas = document.getElementById('waveCanvas');
+  var wrapper = canvas.parentElement;
+  var w = wrapper.offsetWidth;
+  canvas.width = w * 2;
+  canvas.height = 180 * 2;
+  var ctx = canvas.getContext('2d');
+  var data = buffer.getChannelData(0);
+  var step = Math.ceil(data.length / canvas.width);
+  var amp = canvas.height / 2;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 背景
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 中心线
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, amp);
+  ctx.lineTo(canvas.width, amp);
+  ctx.stroke();
+
+  // 是否高亮选区
+  var hasRegion = (regionStart !== undefined && regionEnd !== undefined);
+  var startPixel = hasRegion ? Math.floor(regionStart / buffer.duration * canvas.width) : 0;
+  var endPixel = hasRegion ? Math.ceil(regionEnd / buffer.duration * canvas.width) : canvas.width;
+
+  for (var i = 0; i < canvas.width; i++) {
+    var min = 1.0, max = -1.0;
+    for (var j = 0; j < step && i * step + j < data.length; j++) {
+      var d = data[i * step + j];
+      if (d < min) min = d;
+      if (d > max) max = d;
+    }
+    // 选区内外不同颜色
+    if (hasRegion && (i < startPixel || i > endPixel)) {
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.2)';
+    } else {
+      var brightness = 0.5 + 0.5 * (max - min);
+      ctx.fillStyle = 'rgba(167, 139, 250, ' + (0.3 + brightness * 0.7) + ')';
+    }
+    ctx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp));
+  }
+
+  // 更新选区遮罩
+  updateRegionOverlay(buffer, regionStart, regionEnd);
+}
+
+function updateRegionOverlay(buffer, rs, re) {
+  var w = document.querySelector('.waveform-wrapper').offsetWidth;
+  if (rs === undefined || re === undefined) {
+    rs = trimStart;
+    re = trimEnd;
+  }
+  var left = rs / totalDuration * 100;
+  var right = (1 - re / totalDuration) * 100;
+  document.getElementById('regionLeft').style.width = Math.max(0, left) + '%';
+  document.getElementById('regionRight').style.width = Math.max(0, right) + '%';
+}
+
+// ────── 裁剪控制 ──────
+document.getElementById('trimStart').addEventListener('input', function() {
+  var val = parseFloat(this.value) || 0;
+  if (val < 0) val = 0;
+  var end = parseFloat(document.getElementById('trimEnd').value) || totalDuration;
+  if (val >= end) val = end - 0.1;
+  this.value = val.toFixed(1);
+  trimStart = val;
+  updateTrimDuration();
+  if (originalBuffer) drawWaveform(originalBuffer, trimStart, trimEnd);
+});
+
+document.getElementById('trimEnd').addEventListener('input', function() {
+  var val = parseFloat(this.value) || 0;
+  var start = parseFloat(document.getElementById('trimStart').value) || 0;
+  if (val > totalDuration) val = totalDuration;
+  if (val <= start) val = start + 0.1;
+  this.value = val.toFixed(1);
+  trimEnd = val;
+  updateTrimDuration();
+  if (originalBuffer) drawWaveform(originalBuffer, trimStart, trimEnd);
+});
+
+function updateTrimDuration() {
+  var dur = Math.max(0, trimEnd - trimStart);
+  document.getElementById('trimDuration').textContent = formatTime(dur);
+}
+
+// ────── 音量控制 ──────
+document.getElementById('volumeSlider').addEventListener('input', function() {
+  var val = parseInt(this.value);
+  currentVolume = val / 100;
+  document.getElementById('volumeDisplay').textContent = val + '%';
+});
+
+// ────── 淡入淡出 ──────
+document.getElementById('fadeInDuration').addEventListener('input', function() {
+  currentFadeIn = parseFloat(this.value) || 0;
+});
+
+document.getElementById('fadeOutDuration').addEventListener('input', function() {
+  currentFadeOut = parseFloat(this.value) || 0;
+});
+
+// ────── 应用效果 (生成处理后的 AudioBuffer) ──────
+function applyAllEffects(sourceBuffer, callback) {
+  if (!sourceBuffer) {
+    showStatus('❌ 没有可处理的音频', 'error');
+    return;
+  }
+
+  var vol = currentVolume;
+  var fadeIn = currentFadeIn;
+  var fadeOut = currentFadeOut;
+  var rs = trimStart;
+  var re = trimEnd;
+
+  // 裁剪后的采样数
+  var startSample = Math.floor(rs * sourceBuffer.sampleRate);
+  var endSample = Math.floor(re * sourceBuffer.sampleRate);
+  var trimLength = endSample - startSample;
+  if (trimLength <= 0) {
+    showStatus('❌ 裁剪区间无效', 'error');
+    return;
+  }
+
+  var numChannels = sourceBuffer.numberOfChannels;
+  var sampleRate = sourceBuffer.sampleRate;
+  var result = audioCtx.createBuffer(numChannels, trimLength, sampleRate);
+
+  var fadeInSamples = Math.floor(fadeIn * sampleRate);
+  var fadeOutSamples = Math.floor(fadeOut * sampleRate);
+
+  for (var ch = 0; ch < numChannels; ch++) {
+    var srcData = sourceBuffer.getChannelData(ch);
+    var dstData = result.getChannelData(ch);
+
+    for (var i = 0; i < trimLength; i++) {
+      var srcIdx = startSample + i;
+      var sample = srcData[srcIdx];
+
+      // 音量
+      sample *= vol;
+
+      // 淡入
+      if (i < fadeInSamples) {
+        sample *= (i / fadeInSamples);
+      }
+
+      // 淡出
+      if (i > trimLength - fadeOutSamples) {
+        sample *= ((trimLength - i) / fadeOutSamples);
+      }
+
+      dstData[i] = Math.max(-1, Math.min(1, sample));
+    }
+  }
+
+  return result;
+}
+
+// ────── 预览裁剪 (只处理裁剪) ──────
+function applyTrimPreview() {
+  if (!originalBuffer) return;
+  var rs = trimStart;
+  var re = trimEnd;
+  if (re - rs < 0.1) {
+    showStatus('❌ 裁剪区间太短', 'error');
+    return;
+  }
+
+  showStatus('⏳ 处理裁剪预览...', 'info');
+
+  // 只裁剪，不做其他效果 — 保存当前效果参数
+  var savedVol = currentVolume;
+  var savedFadeIn = currentFadeIn;
+  var savedFadeOut = currentFadeOut;
+  currentVolume = 1.0;
+  currentFadeIn = 0;
+  currentFadeOut = 0;
+
+  var result = applyAllEffects(originalBuffer);
+  processedBuffer = result;
+  hasProcessed = true;
+
+  // 恢复效果参数
+  currentVolume = savedVol;
+  currentFadeIn = savedFadeIn;
+  currentFadeOut = savedFadeOut;
+
+  if (result) {
+    playBuffer(result);
+    showStatus('✅ 裁剪完成，共 ' + formatTime(result.duration) + '，可继续调节音量/淡入淡出，然后「预览全部效果」或直接「导出」', 'success');
+  }
+}
+
+// ────── 预览淡入淡出 ──────
+function applyFadePreview() {
+  if (!originalBuffer) return;
+  var rs = trimStart;
+  var re = trimEnd;
+  if (re - rs < 0.1) {
+    showStatus('❌ 裁剪区间太短', 'error');
+    return;
+  }
+
+  var result = applyAllEffects(originalBuffer);
+  if (!result) return;
+
+  processedBuffer = result;
+  hasProcessed = true;
+  playBuffer(result);
+  showStatus('✅ 淡入淡出已应用，可「预览全部效果」或直接「导出」', 'success');
+}
+
+// ────── 预览全部效果 ──────
+function previewProcessed() {
+  if (!originalBuffer) return;
+
+  var result = applyAllEffects(originalBuffer);
+  if (!result) return;
+
+  processedBuffer = result;
+  hasProcessed = true;
+  playBuffer(result);
+  showStatus('🎧 正在播放处理后的音频', 'info');
+}
+
+// ────── 播放/停止 ──────
+function playBuffer(buffer) {
+  if (!audioCtx || !buffer) return;
+  stopPlayback();
+
+  var source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  source.start(0, 0);
+  source.onended = function() {
+    isPlaying = false;
+    document.getElementById('playBtn').textContent = '▶️';
+  };
+
+  playSource = source;
+  isPlaying = true;
+  playerDuration = buffer.duration;
+  playStartTime = audioCtx.currentTime;
+  playOffset = 0;
+  document.getElementById('playBtn').textContent = '⏸';
+
+  document.getElementById('playerBar').style.display = 'block';
+  startProgressUpdate();
+}
+
+function togglePlayback() {
+  if (!processedBuffer && !originalBuffer) return;
+
+  var buf = processedBuffer || originalBuffer;
+  if (!buf) return;
+
+  if (isPlaying) {
+    // 暂停
+    playOffset += audioCtx.currentTime - playStartTime;
+    stopSource();
+    isPlaying = false;
+    document.getElementById('playBtn').textContent = '▶️';
+  } else {
+    // 续播
+    var source = audioCtx.createBufferSource();
+    source.buffer = buf;
+    source.connect(audioCtx.destination);
+    source.start(0, playOffset % buf.duration);
+    source.onended = function() {
+      isPlaying = false;
+      document.getElementById('playBtn').textContent = '▶️';
+      document.getElementById('progressFill').style.width = '0%';
+      document.getElementById('playTime').textContent = '00:00.0 / ' + formatTime(buf.duration);
+    };
+    playSource = source;
+    isPlaying = true;
+    playerDuration = buf.duration;
+    playStartTime = audioCtx.currentTime;
+    document.getElementById('playBtn').textContent = '⏸';
+    startProgressUpdate();
+  }
+}
+
+function stopPlayback() {
+  stopSource();
+  isPlaying = false;
+  playOffset = 0;
+  document.getElementById('playBtn').textContent = '▶️';
+  document.getElementById('progressFill').style.width = '0%';
+  var dur = (processedBuffer || originalBuffer || {duration:0}).duration || 0;
+  document.getElementById('playTime').textContent = '00:00.0 / ' + formatTime(dur);
+}
+
+function stopSource() {
+  if (playSource) {
+    try { playSource.stop(); } catch(e) {}
+    playSource = null;
+  }
+}
+
+function seekPlayer(e) {
+  if (playerDuration <= 0) return;
+  var rect = e.currentTarget.getBoundingClientRect();
+  var pct = (e.clientX - rect.left) / rect.width;
+
+  var buf = processedBuffer || originalBuffer;
+  if (!buf) return;
+
+  playOffset = pct * playerDuration;
+
+  if (isPlaying) {
+    stopSource();
+    var source = audioCtx.createBufferSource();
+    source.buffer = buf;
+    source.connect(audioCtx.destination);
+    source.start(0, playOffset % buf.duration);
+    source.onended = function() {
+      isPlaying = false;
+      document.getElementById('playBtn').textContent = '▶️';
+      document.getElementById('progressFill').style.width = '0%';
+      document.getElementById('playTime').textContent = '00:00.0 / ' + formatTime(buf.duration);
+    };
+    playSource = source;
+    playStartTime = audioCtx.currentTime;
+  }
+
+  document.getElementById('progressFill').style.width = (pct * 100) + '%';
+  document.getElementById('playTime').textContent = formatTime(playOffset) + ' / ' + formatTime(playerDuration);
+  updateCurrentTime(playOffset);
+}
+
+var progressInterval = null;
+
+function startProgressUpdate() {
+  if (progressInterval) clearInterval(progressInterval);
+  progressInterval = setInterval(function() {
+    if (!isPlaying || !playSource) {
+      clearInterval(progressInterval);
+      progressInterval = null;
+      return;
+    }
+    var elapsed = playOffset + (audioCtx.currentTime - playStartTime);
+    var pct = (elapsed / playerDuration) * 100;
+    if (pct > 100) pct = 100;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('playTime').textContent = formatTime(elapsed) + ' / ' + formatTime(playerDuration);
+    updateCurrentTime(elapsed);
+  }, 50);
+}
+
+function updateCurrentTime(t) {
+  document.getElementById('currentTimeDisplay').textContent = formatTime(t);
+}
+
+// ────── 导出处理后的音频 ──────
+function exportProcessed() {
+  if (!originalBuffer) {
+    showStatus('❌ 请先导入音频文件', 'error');
+    return;
+  }
+
+  showStatus('⏳ 正在处理音频，请稍候...', 'info');
+  document.getElementById('processingOverlay').style.display = 'flex';
+
+  setTimeout(function() {
+    try {
+      // 如果有处理过的缓存直接用，否则从原始处理
+      var bufToExport = hasProcessed && processedBuffer
+        ? processedBuffer
+        : applyAllEffects(originalBuffer);
+
+      if (!bufToExport) {
+        document.getElementById('processingOverlay').style.display = 'none';
+        return;
+      }
+
+      // 用 OfflineAudioContext 渲染为完整 PCM
+      var offlineCtx = new OfflineAudioContext(
+        bufToExport.numberOfChannels,
+        bufToExport.length,
+        bufToExport.sampleRate
+      );
+
+      var source = offlineCtx.createBufferSource();
+      source.buffer = bufToExport;
+      source.connect(offlineCtx.destination);
+      source.start(0);
+
+      offlineCtx.startRendering().then(function(renderedBuffer) {
+        document.getElementById('processingOverlay').style.display = 'none';
+        var wavBlob = audioBufferToWav(renderedBuffer);
+        var url = URL.createObjectURL(wavBlob);
+        var a = document.createElement('a');
+        a.href = url;
+        var origName = document.getElementById('fileName').textContent;
+        var baseName = origName.replace(/\.[^.]+$/, '') || 'audio';
+        a.download = baseName + '_processed.wav';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+        showStatus('✅ 导出成功！文件已下载', 'success');
+      }).catch(function(err) {
+        document.getElementById('processingOverlay').style.display = 'none';
+        showStatus('❌ 导出失败: ' + err.message, 'error');
+      });
+    } catch(e) {
+      document.getElementById('processingOverlay').style.display = 'none';
+      showStatus('❌ 导出失败: ' + e.message, 'error');
+    }
+  }, 100);
+}
+
+// ────── WAV 编码 ──────
+function audioBufferToWav(buffer) {
+  var numChannels = buffer.numberOfChannels;
+  var sampleRate = buffer.sampleRate;
+  var format = 1; // PCM
+  var bitsPerSample = 16;
+
+  // 合并所有通道
+  var channelData = [];
+  for (var ch = 0; ch < numChannels; ch++) {
+    channelData.push(buffer.getChannelData(ch));
+  }
+
+  var totalSamples = buffer.length * numChannels;
+  var dataSize = totalSamples * (bitsPerSample / 8);
+  var headerSize = 44;
+  var totalSize = headerSize + dataSize;
+
+  var arrayBuffer = new ArrayBuffer(totalSize);
+  var view = new DataView(arrayBuffer);
+
+  // WAV header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, totalSize - 8, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true);
+  view.setUint16(32, numChannels * (bitsPerSample / 8), true);
+  view.setUint16(34, bitsPerSample, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // 写入 PCM 数据
+  var offset = 44;
+  for (var i = 0; i < buffer.length; i++) {
+    for (var ch = 0; ch < numChannels; ch++) {
+      var sample = Math.max(-1, Math.min(1, channelData[ch][i]));
+      var intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset, intSample, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
+function writeString(view, offset, str) {
+  for (var i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
+// ────── 刻度尺 ──────
+function buildRuler(duration) {
+  var ruler = document.getElementById('ruler');
+  ruler.innerHTML = '';
+  var interval = duration > 120 ? 30 : duration > 60 ? 15 : duration > 30 ? 10 : 5;
+  for (var t = 0; t <= duration; t += interval) {
+    var div = document.createElement('div');
+    div.className = 'ruler-mark';
+    div.style.left = (t / duration * 100) + '%';
+    div.innerHTML = '<span class="ruler-num">' + formatTime(t) + '</span>';
+    ruler.appendChild(div);
+  }
+}
+
+// ────── 工具函数 ──────
+function formatTime(sec) {
+  if (!sec || isNaN(sec)) return '00:00.0';
+  var m = Math.floor(sec / 60);
+  var s = sec % 60;
+  return String(m).padStart(2, '0') + ':' + s.toFixed(1).padStart(4, '0');
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + 'KB';
+  return (bytes/1048576).toFixed(1) + 'MB';
+}
+
+function showStatus(msg, type) {
+  var bar = document.getElementById('statusBar');
+  bar.style.display = 'block';
+  bar.innerHTML = '<div class="status-message status-' + (type || 'info') + '">' + msg + '</div>';
+  // 成功/错误消息3秒后自动消失，info持续
+  if (type !== 'info') {
+    setTimeout(function() { hideStatus(); }, 4000);
+  }
+}
+
+function hideStatus() {
+  document.getElementById('statusBar').style.display = 'none';
+}
+
+// ────── 保存到播客 ──────
+function saveToPodcast() {
+  if (!podcastId) {
+    showStatus('❌ 未关联播客，无法保存', 'error');
+    return;
+  }
+  if (!hasProcessed || !processedBuffer) {
+    showStatus('❌ 请先预览效果，再保存到播客', 'error');
+    return;
+  }
+
+  showStatus('⏳ 正在保存到播客...', 'info');
+  document.getElementById('processingOverlay').style.display = 'flex';
+
+  setTimeout(function() {
+    try {
+      // 用 OfflineAudioContext 渲染处理后的音频
+      var offlineCtx = new OfflineAudioContext(
+        processedBuffer.numberOfChannels,
+        processedBuffer.length,
+        processedBuffer.sampleRate
+      );
+      var source = offlineCtx.createBufferSource();
+      source.buffer = processedBuffer;
+      source.connect(offlineCtx.destination);
+      source.start(0);
+
+      offlineCtx.startRendering().then(function(renderedBuffer) {
+        // 转 WAV Blob
+        var wavBlob = audioBufferToWav(renderedBuffer);
+        var formData = new FormData();
+        var origName = document.getElementById('fileName').textContent || 'audio';
+        var baseName = origName.replace(/\.[^.]+$/, '') || 'audio';
+        formData.append('audio', wavBlob, baseName + '_processed.wav');
+
+        fetch('/audio-editor/save/' + podcastId, {
+          method: 'POST',
+          body: formData
+        }).then(function(r) { return r.json(); }).then(function(data) {
+          document.getElementById('processingOverlay').style.display = 'none';
+          if (data.success) {
+            showStatus('✅ ' + data.message, 'success');
+            document.getElementById('saveToPodcastBtn').textContent = '✅ 已保存';
+            document.getElementById('saveToPodcastBtn').disabled = true;
+          } else {
+            showStatus('❌ 保存失败: ' + (data.error || '未知错误'), 'error');
+          }
+        }).catch(function(err) {
+          document.getElementById('processingOverlay').style.display = 'none';
+          showStatus('❌ 保存失败: ' + err.message, 'error');
+        });
+      }).catch(function(err) {
+        document.getElementById('processingOverlay').style.display = 'none';
+        showStatus('❌ 渲染失败: ' + err.message, 'error');
+      });
+    } catch(e) {
+      document.getElementById('processingOverlay').style.display = 'none';
+      showStatus('❌ 保存失败: ' + e.message, 'error');
+    }
+  }, 100);
+}
+
+// ────── 如果是播客编辑模式，自动加载音频 ──────
+if (podcastId && podcastFilename) {
+  (function() {
+    // 先显示界面
+    document.getElementById('noFileMsg').style.display = 'none';
+    document.getElementById('waveformContainer').style.display = 'block';
+    document.getElementById('trimTools').style.display = 'block';
+    document.getElementById('volumeTools').style.display = 'block';
+    document.getElementById('fadeTools').style.display = 'block';
+    document.getElementById('exportTools').style.display = 'block';
+    document.getElementById('fileInfo').style.display = 'block';
+    document.getElementById('fileName').textContent = podcastFilename;
+    document.getElementById('fileSize').textContent = '正在加载...';
+
+    showStatus('⏳ 正在加载播客音频...', 'info');
+
+    fetch('/audio-editor/load/' + podcastId)
+      .then(function(r) {
+        if (!r.ok) throw new Error('加载失败');
+        return r.arrayBuffer();
+      })
+      .then(function(arrayBuf) {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioCtx.decodeAudioData(arrayBuf, function(buf) {
+          originalBuffer = buf;
+          originalDuration = buf.duration;
+          totalDuration = originalDuration;
+          trimStart = 0;
+          trimEnd = originalDuration;
+          processedBuffer = null;
+          hasProcessed = false;
+          document.getElementById('fileDur').textContent = '时长: ' + formatTime(totalDuration);
+          document.getElementById('fileSize').textContent = '大小: ' + formatSize(arrayBuf.byteLength);
+          document.getElementById('trimEnd').value = originalDuration.toFixed(1);
+          document.getElementById('trimEnd').max = originalDuration.toFixed(1);
+          document.getElementById('trimStart').max = originalDuration.toFixed(1);
+          updateTrimDuration();
+          drawWaveform(buf, 0, originalDuration);
+          buildRuler(originalDuration);
+          document.getElementById('volumeSlider').value = 100;
+          currentVolume = 1.0;
+          hideStatus();
+        }, function() {
+          showStatus('❌ 无法解码该音频文件', 'error');
+        });
+      })
+      .catch(function(err) {
+        showStatus('❌ 加载播客音频失败: ' + err.message, 'error');
+      });
+  })();
+}
+
+// 窗口resize重绘波形
+window.addEventListener('resize', function() {
+  if (originalBuffer) {
+    drawWaveform(originalBuffer, trimStart, trimEnd);
+  }
+});
+</script>
+
+<style>
+.audio-editor { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.editor-subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; }
+
+.editor-layout { display: flex; gap: 20px; margin-top: 20px; }
+.toolbar { width: 260px; flex-shrink: 0; }
+.tool-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.tool-section h3 { font-size: 14px; color: var(--text); margin: 0 0 12px 0; }
+.tool-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: .2s;
+  text-align: center;
+  font-family: inherit;
+}
+.tool-btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+.tool-btn.primary {
+  background: linear-gradient(135deg, var(--accent), #6D28D9);
+  color: #fff !important;
+  border: none;
+}
+.tool-btn.primary:hover { box-shadow: 0 4px 12px rgba(139,92,246,.3); }
+
+.editor-main { flex: 1; min-width: 0; }
+
+/* ── 导入区域 ── */
+.upload-btn {
+  text-align: center;
+  padding: 20px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: .3s;
+}
+.upload-btn:hover { border-color: var(--accent); background: rgba(167, 139, 250, 0.05); }
+.upload-btn span { display: block; }
+
+/* ── 波形卡 ── */
+.waveform-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  min-height: 300px;
+  position: relative;
+}
+
+#noFileMsg { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.no-file-icon { font-size: 48px; margin-bottom: 12px; }
+
+.waveform-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  margin-bottom: 8px;
+}
+.waveform-wrapper {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a1a2e;
+}
+#waveCanvas { display: block; width: 100%; height: 180px; }
+
+.region-mask {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  transition: width 0.15s ease;
+}
+.region-left { left: 0; }
+.region-right { right: 0; }
+
+.waveform-ruler {
+  display: flex;
+  position: relative;
+  height: 24px;
+  margin-top: 4px;
+}
+.ruler-mark {
+  position: absolute;
+  top: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  transform: translateX(-50%);
+}
+
+/* ── 裁剪控制 ── */
+.trim-controls, .fade-controls { display: flex; flex-direction: column; gap: 8px; }
+.trim-row, .fade-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.trim-row label, .fade-row label { font-size: 12px; color: var(--text-muted); min-width: 40px; }
+.trim-input-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.trim-input {
+  width: 60px;
+  padding: 4px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  text-align: center;
+}
+.trim-unit { font-size: 11px; color: var(--text-muted); }
+
+/* ── 音量 ── */
+.volume-control { display: flex; flex-direction: column; gap: 6px; }
+.volume-slider {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 3px;
+  outline: none;
+}
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.volume-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+#volumeDisplay { color: var(--accent); font-weight: 600; }
+
+/* ── 导出 ── */
+.export-buttons { display: flex; flex-direction: column; gap: 6px; }
+
+/* ── 播客上下文 ── */
+.podcast-context {
+  background: rgba(167, 139, 250, 0.1);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+.podcast-meta { color: var(--text-muted); font-size: 12px; }
+
+/* ── 保存按钮 ── */
+.save-btn {
+  background: linear-gradient(135deg, #34d399, #059669) !important;
+  color: #fff !important;
+  border: none !important;
+}
+.save-btn:hover { box-shadow: 0 4px 12px rgba(52, 211, 153, .3) !important; }
+.save-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── 状态 ── */
+#statusBar { margin-top: 12px; }
+.status-message {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid;
+}
+.status-info {
+  background: rgba(167, 139, 250, 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.status-success {
+  background: rgba(52, 211, 153, 0.1);
+  border-color: var(--green);
+  color: var(--green);
+}
+.status-error {
+  background: rgba(248, 113, 113, 0.1);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ── 处理中遮罩 ── */
+#processingOverlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 14, 23, 0.85);
+  border-radius: 12px;
+  color: var(--accent);
+  font-size: 16px;
+  gap: 16px;
+  z-index: 10;
+}
+.processing-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── 播放器条 ── */
+.player-bar {
+  margin-top: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+.player-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.player-btn {
+  font-size: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  transition: .2s;
+}
+.player-btn:hover { transform: scale(1.15); }
+.player-progress { flex: 1; }
+.player-progress-track {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+}
+.player-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.05s linear;
+}
+.player-time {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  white-space: nowrap;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 768px) {
+  .editor-layout { flex-direction: column; }
+  .toolbar { width: 100%; }
+}
+</style>

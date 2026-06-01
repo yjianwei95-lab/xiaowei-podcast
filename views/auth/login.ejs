@@ -1,0 +1,25 @@
+<div class="login-page">
+  <h1>🔐 用户登录</h1>
+  <% if (typeof flash !== 'undefined' && flash) { %>
+    <div class="flash <%= flash.category %>"><%= flash.message %></div>
+  <% } %>
+  <form method="POST" action="/login" class="auth-form" id="loginForm">
+    <div class="form-group">
+      <label for="username">用户名</label>
+      <input type="text" id="username" name="username" required placeholder="输入用户名">
+    </div>
+    <div class="form-group">
+      <label for="password">密码</label>
+      <input type="password" id="password" name="password" required placeholder="输入密码">
+    </div>
+    <button type="submit" class="btn btn-full" id="loginBtn">登录</button>
+  </form>
+  <p class="auth-hint">还没有账号？<a href="/register">去注册</a></p>
+  <p class="auth-hint"><a href="/">← 返回首页</a></p>
+</div>
+<script>
+document.getElementById('loginForm').addEventListener('submit', function() {
+  document.getElementById('loginBtn').textContent = '登录中...';
+  document.getElementById('loginBtn').disabled = true;
+});
+</script>

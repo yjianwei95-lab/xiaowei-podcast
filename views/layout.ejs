@@ -13,18 +13,26 @@
       <div class="nav-links">
         <a href="/">首页</a>
         <a href="/upload">上传声音</a>
-        <a href="/admin/login" class="nav-admin">管理</a>
+        <a href="/audio-editor" style="color:#FFD700;font-weight:bold">🎵 音频编辑</a>
+        <% if (typeof session !== 'undefined' && session && (session.loggedIn || session.isAdmin || session.userId)) { %>
+          <span class="nav-user">👤 <%= session.nickname || session.username || '用户' %></span>
+          <% if (session.isAdmin || session.loggedIn) { %>
+          <a href="/admin" style="color:#FFD700">🔐 管理</a>
+          <% } %>
+          <a href="/logout" class="nav-logout">退出</a>
+        <% } else { %>
+          <a href="/login">登录</a>
+          <a href="/register">注册</a>
+        <% } %>
       </div>
     </div>
   </nav>
-
   <main class="container">
     <% if (typeof flash !== 'undefined' && flash) { %>
       <div class="flash <%= flash.category %>"><%= flash.message %></div>
     <% } %>
     <%- content %>
   </main>
-
   <footer class="footer">
     <div class="container">
       <p>🎙️ 小伟播客 · 用声音连接你我</p>
