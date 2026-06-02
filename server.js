@@ -62,6 +62,20 @@ const upload = multer({ storage, limits: { fileSize: 200 * 1024 * 1024 }, fileFi
   allowedMimes.includes(file.mimetype) ? cb(null, true) : cb(new Error('不支持的文件格式'));
 }});
 
+// 重置管理员密码（仅用于调试）
+app.get('/admin/reset-password', (req, res) => {
+  const admin = db.admin.find(u => u.username === 'admin');
+  if (admin) {
+    admin.password = 'admin123';
+    saveDB();
+    res.send('密码已重置为: admin123');
+  } else {
+    db.admin = [{ id: nextId++, username: 'admin', password: 'admin123' }];
+    saveDB();
+    res.send('管理员已创建，密码: admin123');
+  }
+});
+
 function getClientIP(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || 'unknown';
 }
