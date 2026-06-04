@@ -47,6 +47,7 @@ if (db.admin.length === 0) {
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
 const allowedMimes = ['audio/mpeg','audio/mp3','audio/wav','audio/ogg','audio/aac','audio/flac','audio/x-m4a','audio/mp4','audio/webm','audio/x-wav'];
 
@@ -86,6 +87,7 @@ function localNow() {
   return local.toISOString().replace('Z', '+08:00');
 }
 
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -116,6 +118,11 @@ function getStats() {
     totalSize: db.podcasts.reduce((s, p) => s + (p.file_size || 0), 0)
   };
 }
+
+// Health check for Railway
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 app.get('/', (req, res) => {
   const podcasts = db.podcasts.filter(p => p.status !== 0).sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -174,6 +181,74 @@ app.post('/audio-editor/upload', (req, res) => {
 });
 
 // 登录/注册
+// 手机号登录（基础版）
+app.get('/phone-login', (req, res) => {
+  if (req.session.userId || req.session.isAdmin) return res.redirect('/');
+  renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录' });
+});
+
+app.post('/phone-login', (req, res) => {
+  const phone = (req.body.phone || '').trim().replace(/\s/g, '');
+  const { password } = req.body;
+
+  if (!phone) {
+    return renderWithLayout(req, res, 'auth/phone-login', {
+      title: '手机号登录',
+      flash: { category: 'error', message: '请输入手机号' }
+    });
+  }
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    return renderWithLayout(req, res, 'auth/phone-login', {
+      title: '手机号登录',
+      flash: { category: 'error', message: '请输入正确的11位手机号' },
+      phone
+    });
+  }
+  if (!password) {
+    return renderWithLayout(req, res, 'auth/phone-login', {
+      title: '手机号登录',
+      flash: { category: 'error', message: '请输入密码' },
+      phone
+    });
+  }
+
+  const user = db.users.find(u => u.phone === phone);
+  if (!user) {
+    return renderWithLayout(req, res, 'auth/phone-login', {
+      title: '手机号登录',
+      flash: { category: 'error', message: '该手机号未注册，请先注册' },
+      phone
+    });
+  }
+
+  // 密码验证
+  let passwordValid = false;
+  if (user.password_hash) {
+    passwordValid = bcrypt.compareSync(password, user.password_hash);
+  } else if (user.password) {
+    passwordValid = (user.password === password);
+    if (passwordValid) {
+      user.password_hash = bcrypt.hashSync(password, 10);
+      delete user.password;
+      saveDB();
+    }
+  }
+
+  if (!passwordValid) {
+    return renderWithLayout(req, res, 'auth/phone-login', {
+      title: '手机号登录',
+      flash: { category: 'error', message: '密码错误' },
+      phone
+    });
+  }
+
+  req.session.userId = user.id;
+  req.session.username = user.username;
+  req.session.nickname = user.nickname || user.username;
+  req.session.phone = user.phone || '';
+  return res.redirect('/');
+});
+
 app.get('/login', (req, res) => {
   if (req.session.userId || req.session.isAdmin) return res.redirect('/');
   renderWithLayout(req, res, 'auth/login', { title: '登录' });
@@ -181,27 +256,160 @@ app.get('/login', (req, res) => {
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-  const user = db.users.find(u => u.username === username && u.password === password);
-  if (user) {
-    req.session.userId = user.id; req.session.username = user.username; req.session.nickname = user.nickname || user.username;
-    return res.redirect('/');
+  // 支持手机号或用户名登录
+  const identifier = (username || '').trim();
+  if (!identifier) {
+    return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '请输入手机号或用户名' } });
   }
-  renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '用户名或密码错误' } });
+  let user = db.users.find(u => u.username === identifier || u.phone === identifier);
+  if (!user) {
+    return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '账号不存在' } });
+  }
+  // 密码验证：优先用 bcrypt（新用户），兼容明文密码（旧用户）
+  let passwordValid = false;
+  if (user.password_hash) {
+    passwordValid = bcrypt.compareSync(password, user.password_hash);
+  } else if (user.password) {
+    passwordValid = (user.password === password);
+    // 自动升级旧密码为 bcrypt 哈希
+    if (passwordValid) {
+      user.password_hash = bcrypt.hashSync(password, 10);
+      delete user.password;
+      saveDB();
+    }
+  }
+  if (!passwordValid) {
+    return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '密码错误' } });
+  }
+  req.session.userId = user.id;
+  req.session.username = user.username;
+  req.session.nickname = user.nickname || user.username;
+  req.session.phone = user.phone || '';
+  return res.redirect('/');
 });
 
 app.get('/register', (req, res) => renderWithLayout(req, res, 'auth/register', { title: '注册' }));
 
 app.post('/register', (req, res) => {
-  const { username, password, nickname } = req.body;
-  if (!username || !password || username.length < 2) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '用户名至少2个字符' } });
-  if (password.length < 4) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '密码至少4位' } });
-  if (db.users.find(u => u.username === username)) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '用户名已被注册' } });
-  db.users.push({ id: nextId++, username, password, nickname: nickname || username, created_at: localNow() });
+  const { username, phone, password, nickname } = req.body;
+  const usernameTrim = (username || '').trim();
+  const phoneTrim = (phone || '').trim();
+  // 手机号或用户名至少填一个
+  if (!usernameTrim && !phoneTrim) {
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请填写手机号或用户名' } });
+  }
+  // 手机号格式校验（中国大陆）
+  if (phoneTrim && !/^1[3-9]\d{9}$/.test(phoneTrim)) {
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请输入正确的11位手机号' } });
+  }
+  if (usernameTrim && usernameTrim.length < 2) {
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '用户名至少2个字符' } });
+  }
+  if (!password || password.length < 4) {
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '密码至少4位' } });
+  }
+  // 检查手机号是否已注册
+  if (phoneTrim && db.users.find(u => u.phone === phoneTrim)) {
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该手机号已被注册' } });
+  }
+  // 检查用户名是否已注册
+  if (usernameTrim && db.users.find(u => u.username === usernameTrim)) {
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该用户名已被注册' } });
+  }
+  // 生成唯一的用户名（如果只提供了手机号）
+  const finalUsername = usernameTrim || ('用户' + phoneTrim.slice(-4));
+  // 密码哈希存储
+  const passwordHash = bcrypt.hashSync(password, 10);
+  db.users.push({
+    id: nextId++,
+    username: finalUsername,
+    phone: phoneTrim || null,
+    password_hash: passwordHash,
+    nickname: (nickname || finalUsername).trim(),
+    created_at: localNow()
+  });
   saveDB();
-  renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'success', message: '注册成功！请登录' } });
+  renderWithLayout(req, res, 'auth/login', {
+    title: '登录',
+    flash: { category: 'success', message: '注册成功！请使用手机号或用户名登录' }
+  });
 });
 
 app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
+
+// ─── JSON API（供原生 App 调用） ───
+// 手机号登录 API
+app.post('/api/phone-login', (req, res) => {
+  const phone = (req.body.phone || '').trim().replace(/\s/g, '');
+  const { password } = req.body;
+
+  if (!phone) return res.json({ success: false, message: '请输入手机号' });
+  if (!/^1[3-9]\d{9}$/.test(phone)) return res.json({ success: false, message: '请输入正确的11位手机号' });
+  if (!password) return res.json({ success: false, message: '请输入密码' });
+
+  const user = db.users.find(u => u.phone === phone);
+  if (!user) return res.json({ success: false, message: '该手机号未注册，请先注册' });
+
+  let passwordValid = false;
+  if (user.password_hash) {
+    passwordValid = bcrypt.compareSync(password, user.password_hash);
+  } else if (user.password) {
+    passwordValid = (user.password === password);
+    if (passwordValid) {
+      user.password_hash = bcrypt.hashSync(password, 10);
+      delete user.password;
+      saveDB();
+    }
+  }
+
+  if (!passwordValid) return res.json({ success: false, message: '密码错误' });
+
+  req.session.userId = user.id;
+  req.session.username = user.username;
+  req.session.nickname = user.nickname || user.username;
+  req.session.phone = user.phone || '';
+  return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname || user.username, phone: user.phone || '' } });
+});
+
+// 手机号注册 API
+app.post('/api/register', (req, res) => {
+  const { phone, password, nickname } = req.body;
+  const phoneTrim = (phone || '').trim();
+  const passwordTrim = (password || '').trim();
+
+  if (!phoneTrim) return res.json({ success: false, message: '请输入手机号' });
+  if (!/^1[3-9]\d{9}$/.test(phoneTrim)) return res.json({ success: false, message: '请输入正确的11位手机号' });
+  if (!passwordTrim || passwordTrim.length < 4) return res.json({ success: false, message: '密码至少4位' });
+  if (db.users.find(u => u.phone === phoneTrim)) return res.json({ success: false, message: '该手机号已被注册' });
+
+  const finalUsername = '用户' + phoneTrim.slice(-4);
+  const passwordHash = bcrypt.hashSync(passwordTrim, 10);
+  const newUser = {
+    id: nextId++,
+    username: finalUsername,
+    phone: phoneTrim,
+    password_hash: passwordHash,
+    nickname: (nickname || finalUsername).trim(),
+    created_at: localNow()
+  };
+  db.users.push(newUser);
+  saveDB();
+
+  // 注册成功自动登录
+  req.session.userId = newUser.id;
+  req.session.username = newUser.username;
+  req.session.nickname = newUser.nickname;
+  req.session.phone = newUser.phone;
+  return res.json({ success: true, user: { id: newUser.id, username: newUser.username, nickname: newUser.nickname, phone: newUser.phone } });
+});
+
+// 获取当前登录用户
+app.get('/api/me', (req, res) => {
+  if (!req.session.userId) return res.json({ success: false, message: '未登录' });
+  const user = db.users.find(u => u.id === req.session.userId);
+  if (!user) return res.json({ success: false, message: '用户不存在' });
+  return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname || user.username, phone: user.phone || '' } });
+});
 
 // 后台管理
 app.get('/admin/login', (req, res) => req.session.loggedIn ? res.redirect('/admin') : res.render('admin/login', { flash: null }));
