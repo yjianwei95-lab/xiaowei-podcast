@@ -2,7 +2,14 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#4A90D9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="小伟播客">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="apple-touch-startup-image" href="/icon-512.png">
+  <link rel="manifest" href="/manifest.json">
   <title><%= typeof title !== 'undefined' && title ? title + ' - ' : '' %>小伟播客</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
@@ -36,7 +43,30 @@
   <footer class="footer">
     <div class="container">
       <p>🎙️ 小伟播客 · 用声音连接你我</p>
+      <p style="margin-top:5px;font-size:12px;opacity:0.7">
+        💡 在浏览器菜单中点「添加到主屏幕」即可安装为APP
+      </p>
     </div>
   </footer>
+
+  <!-- PWA 服务注册 -->
+  <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(function(reg) {
+          console.log('PWA Service Worker 注册成功', reg.scope);
+        })
+        .catch(function(err) {
+          console.log('PWA Service Worker 注册失败:', err);
+        });
+    });
+  }
+
+  // 检测是否已安装为APP
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    document.body.classList.add('pwa-installed');
+  }
+  </script>
 </body>
 </html>

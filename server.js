@@ -122,6 +122,11 @@ app.get('/', (req, res) => {
   renderWithLayout(req, res, 'index', { podcasts, stats: getStats(), title: '小伟播客' });
 });
 
+// PWA安装教程页面
+app.get('/app', (req, res) => {
+  renderWithLayout(req, res, 'app', { title: '安装APP - 小伟播客', domain: req.headers.host });
+});
+
 app.get('/play/:uuid', (req, res) => {
   const podcast = db.podcasts.find(p => p.uuid === req.params.uuid && p.status !== 0);
   if (!podcast) return renderWithLayout(req, res, '404', { title: '未找到' });
