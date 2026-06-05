@@ -6,6 +6,8 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const ws = require('ws');
+const { Pool } = require('pg');
+const PgSession = require('connect-pg-simple')(session);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -246,8 +248,18 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
-// 音频文件：从 Supabase Storage 读取（/uploads/:filename 路由在下方定义）
-app.use(session({ secret: process.env.SESSION_SECRET || 'xiaowei-podcast-fixed-secret-2026', resave: false, saveUninitialized: false, cookie: { maxAge: 24 * 60 * 60 * 1000, sameSite: 'none', secure: true } }));
+
+// Session 中间件（使用 PostgreSQL 持久化，避免多实例问题）
+const pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+app.use(session({
+  store: new PgSession({ pool: pgPool, tableName: 'session' }),
+  secret: process.env.SESSION_SECRET || 'xiaowei-podcast-fixed-secret-2026',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 24 * 60 * 60 * 1000, sameSite: 'none', secure: true }
+}));
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
