@@ -25,6 +25,16 @@ const supabase = createClient(SUPABASE_URL, supabaseKey, {
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+// 音频文件扩展名 → Content-Type 映射
+const AUDIO_CONTENT_TYPES = {
+  'mp3': 'audio/mpeg',
+  'wav': 'audio/wav',
+  'm4a': 'audio/mp4',
+  'ogg': 'audio/ogg',
+  'aac': 'audio/aac',
+  'flac': 'audio/flac'
+};
+
 // ===================================================================
 // 工具函数
 // ===================================================================
@@ -250,24 +260,33 @@ app.post('/upload', (req, res) => {
     }
 
     try {
-      // 1. 上传音频文件到 Supabase Storage
+      // 1. 上传音频文件到 Supabase Storage（必须成功）
       const fileBuffer = fs.readFileSync(req.file.path);
       const filePath = `${req.file.filename}`;
+      
+      // 根据文件扩展名检测正确的 Content-Type
+      const ext = req.file.originalname.split('.').pop().toLowerCase();
+      const contentType = AUDIO_CONTENT_TYPES[ext] || 'audio/mpeg';
 
       const { error: uploadError } = await supabase.storage
         .from('audio')
         .upload(filePath, fileBuffer, {
-          contentType: 'audio/mpeg',
+          contentType: contentType,
           upsert: false
         });
 
       if (uploadError) {
-        console.error('Storage上传错误:', uploadError.message);
-        // 如果 Storage 失败，继续使用本地文件
-      } else {
-        // 上传成功，删除本地临时文件
-        fs.unlinkSync(req.file.path);
+        console.error('❌ Storage上传失败:', uploadError.message);
+        fs.unlinkSync(req.file.path); // 删除本地临时文件
+        return renderWithLayout(req, res, 'upload', { 
+          title: '上传声音', 
+          flash: { category: 'error', message: '上传到云存储失败：' + uploadError.message } 
+        });
       }
+
+      // 上传成功，删除本地临时文件
+      fs.unlinkSync(req.file.path);
+      console.log('✅ Storage上传成功:', filePath);
 
       // 2. 插入数据库记录
       const { data: episode, error: dbError } = await supabase
@@ -665,9 +684,11 @@ app.post('/admin/replace-audio/:id', requireAdmin, (req, res) => {
         const oldLocal = path.join(UPLOAD_DIR, episode.filename);
         if (fs.existsSync(oldLocal)) fs.unlinkSync(oldLocal);
 
-        // 上传新文件
+        // 上传新文件（使用正确的 Content-Type）
         const fileBuffer = fs.readFileSync(req.file.path);
-        await supabase.storage.from('audio').upload(`${req.file.filename}`, fileBuffer, { contentType: 'audio/mpeg' });
+        const replaceExt = req.file.originalname.split('.').pop().toLowerCase();
+        const replaceContentType = AUDIO_CONTENT_TYPES[replaceExt] || 'audio/mpeg';
+        await supabase.storage.from('audio').upload(`${req.file.filename}`, fileBuffer, { contentType: replaceContentType });
         fs.unlinkSync(req.file.path);
 
         // 更新数据库
