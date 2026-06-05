@@ -164,7 +164,7 @@ function renderWithLayout(req, res, template, data = {}) {
 }
 
 function requireAdmin(req, res, next) {
-  if (!req.session.loggedIn) return res.redirect('/admin/login');
+  if (!req.session.loggedIn) return res.redirect('/xiaowei-podcast-admin/login');
   next();
 }
 
@@ -661,9 +661,9 @@ app.get('/api/me', async (req, res) => {
 // 后台管理
 // ===================================================================
 
-app.get('/admin/login', (req, res) => req.session.loggedIn ? res.redirect('/admin') : res.render('admin/login', { flash: null }));
+app.get('/xiaowei-podcast-admin/login', (req, res) => req.session.loggedIn ? res.redirect('/xiaowei-podcast-admin') : res.render('admin/login', { flash: null }));
 
-app.post('/admin/login', async (req, res) => {
+app.post('/xiaowei-podcast-admin/login', async (req, res) => {
   try {
     const { data: user, error } = await supabase
       .from('admins')
@@ -676,7 +676,7 @@ app.post('/admin/login', async (req, res) => {
       req.session.loggedIn = true;
       req.session.isAdmin = true;
       req.session.username = req.body.username;
-      return res.redirect('/admin');
+      return res.redirect('/xiaowei-podcast-admin');
     }
     res.render('admin/login', { flash: { category: 'error', message: '用户名或密码错误' } });
   } catch (e) {
@@ -684,10 +684,10 @@ app.post('/admin/login', async (req, res) => {
   }
 });
 
-app.get('/admin/logout', (req, res) => { req.session.destroy(); res.redirect('/admin/login'); });
+app.get('/xiaowei-podcast-admin/logout', (req, res) => { req.session.destroy(); res.redirect('/xiaowei-podcast-admin/login'); });
 
 // 后台总览
-app.get('/admin', requireAdmin, async (req, res) => {
+app.get('/xiaowei-podcast-admin', requireAdmin, async (req, res) => {
   try {
     const stats = await getStats();
 
@@ -721,7 +721,7 @@ app.get('/admin', requireAdmin, async (req, res) => {
 });
 
 // 播客管理
-app.get('/admin/podcasts', requireAdmin, async (req, res) => {
+app.get('/xiaowei-podcast-admin/podcasts', requireAdmin, async (req, res) => {
   try {
     const { data: podcasts, error } = await supabase
       .from('episodes')
@@ -736,18 +736,18 @@ app.get('/admin/podcasts', requireAdmin, async (req, res) => {
 });
 
 // 切换状态（显示/隐藏）
-app.post('/admin/toggle/:id', requireAdmin, async (req, res) => {
+app.post('/xiaowei-podcast-admin/toggle/:id', requireAdmin, async (req, res) => {
   try {
     const { data: episode } = await supabase.from('episodes').select('status').eq('id', req.params.id).single();
     if (episode) {
       await supabase.from('episodes').update({ status: episode.status ? 0 : 1 }).eq('id', req.params.id);
     }
   } catch (e) { console.error('toggle error:', e.message); }
-  res.redirect('/admin/podcasts');
+  res.redirect('/xiaowei-podcast-admin/podcasts');
 });
 
 // 删除节目
-app.post('/admin/delete/:id', requireAdmin, async (req, res) => {
+app.post('/xiaowei-podcast-admin/delete/:id', requireAdmin, async (req, res) => {
   try {
     const { data: episode } = await supabase.from('episodes').select('uuid, filename').eq('id', req.params.id).single();
     if (episode) {
@@ -762,21 +762,21 @@ app.post('/admin/delete/:id', requireAdmin, async (req, res) => {
       await supabase.from('episodes').delete().eq('id', req.params.id);
     }
   } catch (e) { console.error('delete error:', e.message); }
-  res.redirect('/admin/podcasts');
+  res.redirect('/xiaowei-podcast-admin/podcasts');
 });
 
 // 编辑节目
-app.get('/admin/edit/:id', requireAdmin, async (req, res) => {
+app.get('/xiaowei-podcast-admin/edit/:id', requireAdmin, async (req, res) => {
   try {
     const { data: podcast, error } = await supabase.from('episodes').select('*').eq('id', req.params.id).single();
-    if (error || !podcast) return res.redirect('/admin/podcasts');
+    if (error || !podcast) return res.redirect('/xiaowei-podcast-admin/podcasts');
     renderWithLayout(req, res, 'admin/edit', { podcast, title: '编辑播客' });
   } catch (e) {
-    res.redirect('/admin/podcasts');
+    res.redirect('/xiaowei-podcast-admin/podcasts');
   }
 });
 
-app.post('/admin/edit/:id', requireAdmin, async (req, res) => {
+app.post('/xiaowei-podcast-admin/edit/:id', requireAdmin, async (req, res) => {
   try {
     await supabase.from('episodes').update({
       title: req.body.title,
@@ -785,13 +785,13 @@ app.post('/admin/edit/:id', requireAdmin, async (req, res) => {
       description: req.body.description || ''
     }).eq('id', req.params.id);
   } catch (e) { console.error('edit error:', e.message); }
-  res.redirect('/admin/podcasts');
+  res.redirect('/xiaowei-podcast-admin/podcasts');
 });
 
 // 替换音频
-app.post('/admin/replace-audio/:id', requireAdmin, (req, res) => {
+app.post('/xiaowei-podcast-admin/replace-audio/:id', requireAdmin, (req, res) => {
   upload.single('audio')(req, res, async (err) => {
-    if (err || !req.file) return res.redirect('/admin/edit/' + req.params.id);
+    if (err || !req.file) return res.redirect('/xiaowei-podcast-admin/edit/' + req.params.id);
     try {
       const { data: episode } = await supabase.from('episodes').select('filename, uuid').eq('id', req.params.id).single();
       if (episode) {
@@ -816,12 +816,12 @@ app.post('/admin/replace-audio/:id', requireAdmin, (req, res) => {
         }).eq('id', req.params.id);
       }
     } catch (e) { console.error('replace audio error:', e.message); }
-    res.redirect('/admin/edit/' + req.params.id);
+    res.redirect('/xiaowei-podcast-admin/edit/' + req.params.id);
   });
 });
 
 // 访客记录
-app.get('/admin/visitors', requireAdmin, async (req, res) => {
+app.get('/xiaowei-podcast-admin/visitors', requireAdmin, async (req, res) => {
   try {
     const { data: visitors, error } = await supabase
       .from('visitors')
@@ -853,9 +853,9 @@ app.get('/admin/visitors', requireAdmin, async (req, res) => {
 });
 
 // 修改管理员密码
-app.get('/admin/password', requireAdmin, (req, res) => renderWithLayout(req, res, 'admin/password', { title: '修改密码' }));
+app.get('/xiaowei-podcast-admin/password', requireAdmin, (req, res) => renderWithLayout(req, res, 'admin/password', { title: '修改密码' }));
 
-app.post('/admin/password', requireAdmin, async (req, res) => {
+app.post('/xiaowei-podcast-admin/password', requireAdmin, async (req, res) => {
   try {
     const { data: user, error } = await supabase
       .from('admins')
@@ -866,7 +866,7 @@ app.post('/admin/password', requireAdmin, async (req, res) => {
 
     if (user) {
       await supabase.from('admins').update({ password: req.body.new_password }).eq('username', req.session.username);
-      res.redirect('/admin');
+      res.redirect('/xiaowei-podcast-admin');
     } else {
       renderWithLayout(req, res, 'admin/password', { flash: { category: 'error', message: '原密码错误' } });
     }
@@ -883,7 +883,7 @@ console.log('='.repeat(55));
 console.log('  🎙️ 小伟播客已启动！');
 console.log(`  🌐 前台地址: http://localhost:${PORT}`);
 console.log(`  📤 上传页面: http://localhost:${PORT}/upload`);
-console.log(`  🔐 后台地址: http://localhost:${PORT}/admin/login`);
+console.log(`  🔐 后台地址: http://localhost:${PORT}/xiaowei-podcast-admin/login`);
 console.log('  👤 默认账号: admin');
 console.log('  🔑 默认密码: admin123');
 console.log('  ⚠️  首次登录后请尽快修改密码！');

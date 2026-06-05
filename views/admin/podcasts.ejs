@@ -17,14 +17,14 @@
         <td><small><%= p.original_name %><br><%= (p.file_size / 1048576).toFixed(1) %> MB</small><br><audio src="/uploads/<%= p.filename %>?v=<%= p.created_at ? Date.parse(p.created_at) : '' %>" controls style="width:100px;height:28px;margin-top:4px"></audio></td>
         <td class="cell-date"><%= p.created_at ? p.created_at.slice(0, 10) : '-' %></td>
         <td>
-          <form method="POST" action="/admin/toggle/<%= p.id %>" style="display:inline">
+          <form method="POST" action="/xiaowei-podcast-admin/toggle/<%= p.id %>" style="display:inline">
             <button class="btn-status <%= p.status ? 'published' : 'draft' %>"><%= p.status ? '已发布' : '已隐藏' %></button>
           </form>
         </td>
         <td class="cell-actions">
           <a href="/audio-editor?podcastId=<%= p.id %>" class="btn-sm" style="margin-right:4px;color:var(--accent)">✂️ 剪音频</a>
-          <a href="/admin/edit/<%= p.id %>" class="btn-sm" style="margin-right:4px">编辑</a>
-          <form method="POST" action="/admin/delete/<%= p.id %>" style="display:inline" onsubmit="return confirm('确定删除《<%= p.title %>》吗？')">
+          <a href="/xiaowei-podcast-admin/edit/<%= p.id %>" class="btn-sm" style="margin-right:4px">编辑</a>
+          <form method="POST" action="/xiaowei-podcast-admin/delete/<%= p.id %>" style="display:inline" onsubmit="return confirm('确定删除《<%= p.title %>》吗？')">
             <button class="btn-sm btn-danger">删除</button>
           </form>
         </td>

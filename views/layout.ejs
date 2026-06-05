@@ -24,7 +24,7 @@
         <% if (typeof session !== 'undefined' && session && (session.loggedIn || session.isAdmin || session.userId)) { %>
           <span class="nav-user">👤 <%= session.nickname || session.phone || session.username || '用户' %></span>
           <% if (session.isAdmin || session.loggedIn) { %>
-          <a href="/admin" style="color:#FFD700">🔧 管理</a>
+          <a href="/xiaowei-podcast-admin" style="color:#FFD700">🔧 管理</a>
           <% } %>
           <a href="/logout" class="nav-logout">退出</a>
         <% } else { %>
