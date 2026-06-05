@@ -119,8 +119,7 @@ const upload = multer({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-// 音频文件：优先从 Supabase Storage 读取，本地 uploads/ 作为备用
-app.use('/uploads', express.static(UPLOAD_DIR));
+// 音频文件：从 Supabase Storage 读取（/uploads/:filename 路由在下方定义）
 app.use(session({ secret: crypto.randomBytes(32).toString('hex'), resave: false, saveUninitialized: false, cookie: { maxAge: 24 * 60 * 60 * 1000 } }));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -164,6 +163,12 @@ app.get('/debug', async (req, res) => {
   res.json(diagnostics);
 });
 
+// 音频文件路由（从 Supabase Storage 重定向）
+app.get('/uploads/:filename', (req, res) => {
+  const redirectUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/episodes/${req.params.filename}`;
+  res.redirect(302, redirectUrl);
+});
+
 // 首页
 app.get('/', async (req, res) => {
   try {
@@ -203,6 +208,9 @@ app.get('/play/:uuid', async (req, res) => {
 
     if (error || !podcast) return renderWithLayout(req, res, '404', { title: '未找到' });
 
+    // 生成 Supabase Storage 音频 URL（公网可访问）
+    const audioUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/episodes/${podcast.filename}`;
+
     // 增加播放次数
     await supabase
       .from('episodes')
@@ -219,7 +227,7 @@ app.get('/play/:uuid', async (req, res) => {
         referer: req.headers['referer'] || ''
       }]);
 
-    renderWithLayout(req, res, 'player', { podcast, title: podcast.title, req });
+    renderWithLayout(req, res, 'player', { podcast, audioUrl, title: podcast.title, req });
   } catch (e) {
     console.error('播放页面错误:', e.message);
     renderWithLayout(req, res, '404', { title: '未找到' });

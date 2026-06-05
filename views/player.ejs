@@ -12,7 +12,7 @@
       <span>📦 <%= (podcast.file_size / 1048576).toFixed(1) %> MB</span>
     </div>
     <audio id="audio-player" class="audio-player" controls preload="metadata">
-      <source src="/uploads/<%= podcast.filename %>">
+      <source src="<%= audioUrl %>" type="audio/mpeg">
       您的浏览器不支持音频播放
     </audio>
   </div>
