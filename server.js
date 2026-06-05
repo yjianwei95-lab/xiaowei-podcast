@@ -43,6 +43,111 @@ function getClientIP(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress || 'unknown';
 }
 
+// 解析 User-Agent 获取设备信息
+function parseUserAgent(req) {
+  const ua = req.headers['user-agent'] || '';
+  const result = {
+    device_type: 'unknown',
+    os: '',
+    os_version: '',
+    browser: '',
+    browser_version: '',
+    device_brand: '',
+    device_model: '',
+    screen_resolution: '',
+    language: req.headers['accept-language']?.split(',')[0] || '',
+    platform: ''
+  };
+
+  // 检测设备类型
+  if (/iPad|tablet|PlayBook|Silk/i.test(ua)) {
+    result.device_type = 'tablet';
+  } else if (/Mobile|iP(hone|od)|Android|BlackBerry|IEMobile|Opera Mini/i.test(ua)) {
+    result.device_type = 'mobile';
+  } else {
+    result.device_type = 'desktop';
+  }
+
+  // 检测操作系统
+  if (/iPhone OS (\d+_?\d*)/i.test(ua)) {
+    result.os = 'iOS';
+    result.os_version = ua.match(/iPhone OS (\d+_?\d*)/i)[1].replace(/_/g, '.');
+    result.platform = 'iPhone';
+  } else if (/iPad.*OS (\d+_?\d*)/i.test(ua)) {
+    result.os = 'iOS';
+    result.os_version = ua.match(/iPad.*OS (\d+_?\d*)/i)[1].replace(/_/g, '.');
+    result.platform = 'iPad';
+  } else if (/Android (\d+(\.\d+)?)/i.test(ua)) {
+    result.os = 'Android';
+    result.os_version = ua.match(/Android (\d+(\.\d+)?)/i)[1];
+    result.platform = 'Android';
+  } else if (/Windows NT (\d+\.\d+)/i.test(ua)) {
+    result.os = 'Windows';
+    const winVer = ua.match(/Windows NT (\d+\.\d+)/i)[1];
+    const winMap = { '10.0': '10/11', '6.3': '8.1', '6.2': '8', '6.1': '7', '6.0': 'Vista' };
+    result.os_version = winMap[winVer] || winVer;
+    result.platform = 'Windows';
+  } else if (/Mac OS X (\d+[._]\d+)/i.test(ua)) {
+    result.os = 'macOS';
+    result.os_version = ua.match(/Mac OS X (\d+[._]\d+)/i)[1].replace(/_/g, '.');
+    result.platform = 'MacIntel';
+  } else if (/Linux/i.test(ua)) {
+    result.os = 'Linux';
+    result.platform = 'Linux';
+  }
+
+  // 检测浏览器
+  if (/Edg(?:e|A|iOS)?\/(\d+\.\d+)/i.test(ua)) {
+    result.browser = 'Edge';
+    result.browser_version = ua.match(/Edg(?:e|A|iOS)?\/(\d+\.\d+)/i)[1];
+  } else if (/Firefox\/(\d+\.\d+)/i.test(ua)) {
+    result.browser = 'Firefox';
+    result.browser_version = ua.match(/Firefox\/(\d+\.\d+)/i)[1];
+  } else if (/Chrome\/(\d+\.\d+)/i.test(ua) && !/Edg/i.test(ua)) {
+    result.browser = 'Chrome';
+    result.browser_version = ua.match(/Chrome\/(\d+\.\d+)/i)[1];
+  } else if (/Safari\/(\d+\.\d+)/i.test(ua) && !/Chrome/i.test(ua)) {
+    result.browser = 'Safari';
+    result.browser_version = ua.match(/Version\/(\d+\.\d+)/i)?.[1] || '';
+  }
+
+  // 检测设备品牌和型号（移动设备）
+  if (/iPhone/i.test(ua)) {
+    result.device_brand = 'Apple';
+    result.device_model = 'iPhone';
+    const modelMatch = ua.match(/iPhone\s*(?:OS\s*)?(\d*)/i);
+    if (modelMatch) result.device_model = `iPhone (iOS ${result.os_version})`;
+  } else if (/iPad/i.test(ua)) {
+    result.device_brand = 'Apple';
+    result.device_model = 'iPad';
+  } else if (/SM-([A-Z0-9]+)/i.test(ua)) {
+    result.device_brand = 'Samsung';
+    result.device_model = `Galaxy ${ua.match(/SM-([A-Z0-9]+)/i)[1]}`;
+  } else if (/HUAWEI|HarmonyOS/i.test(ua)) {
+    result.device_brand = 'Huawei';
+    const huaweiMatch = ua.match(/(HUAWEI|JNY|NOH|OCE|ANA)-?[A-Z0-9]*/i);
+    result.device_model = huaweiMatch ? huaweiMatch[0] : 'Huawei Device';
+  } else if (/Xiaomi|Redmi|POCO/i.test(ua)) {
+    result.device_brand = 'Xiaomi';
+    const xiaomiMatch = ua.match(/(Xiaomi|Redmi|POCO)[_\s]?([A-Z0-9]+)?/i);
+    result.device_model = xiaomiMatch ? xiaomiMatch[0] : 'Xiaomi Device';
+  } else if (/OPPO|OnePlus/i.test(ua)) {
+    result.device_brand = 'OPPO';
+    result.device_model = 'OPPO Device';
+  } else if (/vivo/i.test(ua)) {
+    result.device_brand = 'vivo';
+    result.device_model = 'vivo Device';
+  }
+
+  // 尝试从请求中获取屏幕分辨率（如果有 Viewport-Width 头）
+  const viewportWidth = req.headers['viewport-width'] || req.headers['x-requested-with'];
+  if (req.headers['sec-ch-viewport-width']) {
+    result.screen_resolution = `${req.headers['sec-ch-viewport-width']}px`;
+  }
+
+  return result;
+}
+
 function localNow() {
   const d = new Date();
   const local = new Date(d.getTime() + 8 * 60 * 60 * 1000);
@@ -227,14 +332,25 @@ app.get('/play/:uuid', async (req, res) => {
       .update({ play_count: (podcast.play_count || 0) + 1 })
       .eq('uuid', req.params.uuid);
 
-    // 记录访客
+    // 记录访客（包含设备信息）
+    const deviceInfo = parseUserAgent(req);
     await supabase
       .from('visitors')
       .insert([{
         episode_uuid: req.params.uuid,
         ip: getClientIP(req),
         user_agent: req.headers['user-agent'] || '',
-        referer: req.headers['referer'] || ''
+        referer: req.headers['referer'] || '',
+        device_type: deviceInfo.device_type,
+        os: deviceInfo.os,
+        os_version: deviceInfo.os_version,
+        browser: deviceInfo.browser,
+        browser_version: deviceInfo.browser_version,
+        device_brand: deviceInfo.device_brand,
+        device_model: deviceInfo.device_model,
+        screen_resolution: deviceInfo.screen_resolution,
+        language: deviceInfo.language,
+        platform: deviceInfo.platform
       }]);
 
     renderWithLayout(req, res, 'player', { podcast, audioUrl, title: podcast.title, req });
