@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="auto">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="apple-touch-startup-image" href="/icon-512.png">
   <link rel="manifest" href="/manifest.json">
-  <title><%= typeof title !== 'undefined' && title ? title + ' - ' : '' %>小伟播客</title>
+  <title><%= typeof title !== 'undefined' ? (title ? title + ' - ' : '') : '' %>小伟播客</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -22,15 +22,38 @@
         <a href="/upload">上传声音</a>
         <a href="/audio-editor" style="color:#FFD700;font-weight:bold">🎵 音频编辑</a>
         <% if (typeof session !== 'undefined' && session && (session.loggedIn || session.isAdmin || session.userId)) { %>
-          <span class="nav-user">👤 <%= session.nickname || session.username || '用户' %></span>
+          <span class="nav-user">👤 <%= session.nickname || session.phone || session.username || '用户' %></span>
           <% if (session.isAdmin || session.loggedIn) { %>
-          <a href="/admin" style="color:#FFD700">🔐 管理</a>
+          <a href="/admin" style="color:#FFD700">🔧 管理</a>
           <% } %>
           <a href="/logout" class="nav-logout">退出</a>
         <% } else { %>
-          <a href="/login">登录</a>
+          <a href="/phone-login">登录</a>
           <a href="/register">注册</a>
         <% } %>
+        <!-- 主题切换 -->
+        <div class="theme-switcher" id="themeSwitcher">
+          <button class="theme-toggle" id="themeBtn" aria-label="切换主题">
+            <span id="themeIcon">🌙</span>
+          </button>
+          <div class="theme-menu" id="themeMenu">
+            <button class="theme-option" data-theme="light">
+              <span class="theme-opt-icon">☀️</span>
+              <span>亮色</span>
+              <span class="theme-check" id="checkLight"></span>
+            </button>
+            <button class="theme-option" data-theme="dark">
+              <span class="theme-opt-icon">🌙</span>
+              <span>暗色</span>
+              <span class="theme-check" id="checkDark"></span>
+            </button>
+            <button class="theme-option" data-theme="auto">
+              <span class="theme-opt-icon">🖥️</span>
+              <span>自动</span>
+              <span class="theme-check" id="checkAuto"></span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </nav>
@@ -44,29 +67,217 @@
     <div class="container">
       <p>🎙️ 小伟播客 · 用声音连接你我</p>
       <p style="margin-top:5px;font-size:12px;opacity:0.7">
-        💡 在浏览器菜单中点「添加到主屏幕」即可安装为APP
       </p>
     </div>
   </footer>
 
-  <!-- PWA 服务注册 -->
+  <!-- 主题切换 JS -->
   <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-      navigator.serviceWorker.register('/service-worker.js')
-        .then(function(reg) {
-          console.log('PWA Service Worker 注册成功', reg.scope);
-        })
-        .catch(function(err) {
-          console.log('PWA Service Worker 注册失败:', err);
-        });
-    });
-  }
+  (function() {
+    const THEME_KEY = 'xiaowei-theme';
+    const root = document.documentElement;
+    const btn = document.getElementById('themeBtn');
+    const menu = document.getElementById('themeMenu');
+    const icon = document.getElementById('themeIcon');
 
-  // 检测是否已安装为APP
-  if (window.matchMedia('(display-mode: standalone)').matches) {
-    document.body.classList.add('pwa-installed');
-  }
+    function getSystemTheme() {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    function applyTheme(theme) {
+      if (theme === 'auto') {
+        root.removeAttribute('data-theme');
+      } else {
+        root.setAttribute('data-theme', theme);
+      }
+      updateIcon(theme);
+      updateChecks(theme);
+    }
+
+    function updateIcon(theme) {
+      if (theme === 'auto') {
+        icon.textContent = '🖥️';
+      } else if (theme === 'light') {
+        icon.textContent = '☀️';
+      } else {
+        icon.textContent = '🌙';
+      }
+    }
+
+    function updateChecks(theme) {
+      const checks = { light: 'checkLight', dark: 'checkDark', auto: 'checkAuto' };
+      Object.keys(checks).forEach(key => {
+        const el = document.getElementById(checks[key]);
+        if (el) el.textContent = key === theme ? '✓' : '';
+      });
+    }
+
+    function initTheme() {
+      const saved = localStorage.getItem(THEME_KEY) || 'auto';
+      applyTheme(saved);
+
+      // 监听系统主题变化（自动模式下）
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+        if ((localStorage.getItem(THEME_KEY) || 'auto') === 'auto') {
+          // auto模式下系统主题变了，重新计算但不需要改data-theme（无属性=auto）
+        }
+      });
+    }
+
+    // 按钮点击：切换菜单显示
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      menu.classList.toggle('show');
+    });
+
+    // 菜单选项点击
+    document.querySelectorAll('.theme-option').forEach(function(opt) {
+      opt.addEventListener('click', function() {
+        const theme = this.getAttribute('data-theme');
+        localStorage.setItem(THEME_KEY, theme);
+        applyTheme(theme);
+        menu.classList.remove('show');
+      });
+    });
+
+    // 点击空白关闭菜单
+    document.addEventListener('click', function() {
+      menu.classList.remove('show');
+    });
+
+    initTheme();
+  })();
   </script>
+
+  <!-- ─── 移动端底部导航 ─── -->
+  <nav class="mobile-nav" id="mobileNav">
+    <a href="/" class="mobile-nav-item" data-path="/">
+      <span class="mobile-nav-icon">🏠</span>
+      <span class="mobile-nav-label">首页</span>
+    </a>
+    <a href="/audio-editor" class="mobile-nav-item" data-path="/audio-editor">
+      <span class="mobile-nav-icon">🎵</span>
+      <span class="mobile-nav-label">音频</span>
+    </a>
+    <a href="/upload" class="mobile-nav-item" data-path="/upload">
+      <span class="mobile-nav-icon">📤</span>
+      <span class="mobile-nav-label">上传</span>
+    </a>
+    <button class="mobile-nav-item" id="mobileProfileBtn" data-path="/profile">
+      <span class="mobile-nav-icon">👤</span>
+      <span class="mobile-nav-label">我的</span>
+    </button>
+  </nav>
+
+  <!-- 个人中心面板 -->
+  <div class="profile-overlay" id="profileOverlay"></div>
+  <div class="profile-sheet" id="profileSheet">
+    <div class="profile-sheet-handle"></div>
+    <div class="profile-sheet-content">
+      <div class="profile-user-card">
+        <div class="profile-avatar">👤</div>
+        <div class="profile-info">
+          <div class="profile-name" id="profileName"><%= (typeof session !== 'undefined' && session && (session.nickname || session.phone || session.username)) || '未登录' %></div>
+          <div class="profile-detail" id="profileDetail"><%= (typeof session !== 'undefined' && session && session.phone) || '' %></div>
+        </div>
+      </div>
+      <div class="profile-section">
+        <div class="profile-section-title">主题设置</div>
+        <div class="profile-theme-row">
+          <button class="profile-theme-btn" data-theme="light"><span>☀️</span><span>亮色</span></button>
+          <button class="profile-theme-btn" data-theme="dark"><span>🌙</span><span>暗色</span></button>
+          <button class="profile-theme-btn" data-theme="auto"><span>🖥️</span><span>自动</span></button>
+        </div>
+      </div>
+      <div class="profile-section">
+        <% if (typeof session !== 'undefined' && session && (session.loggedIn || session.isAdmin || session.userId)) { %>
+        <a href="/logout" class="profile-logout-btn">退出登录</a>
+        <% } else { %>
+        <a href="/phone-login" class="profile-logout-btn" style="background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;">手机号登录</a>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <!-- 移动端导航 JS -->
+  <script>
+  (function() {
+    var profileOverlay = document.getElementById('profileOverlay');
+    var profileSheet = document.getElementById('profileSheet');
+    var profileBtn = document.getElementById('mobileProfileBtn');
+
+    // 底部导航高亮当前页
+    var currentPath = window.location.pathname;
+    document.querySelectorAll('.mobile-nav-item[data-path]').forEach(function(item) {
+      var path = item.getAttribute('data-path');
+      if (path === '/profile') return; // "我的"是面板，不高亮
+      if (currentPath === path || (path === '/' && currentPath === '/')) {
+        item.classList.add('active');
+      }
+      // 子路径也高亮（如 /audio-editor 下的子页面）
+      if (path !== '/' && currentPath.indexOf(path) === 0) {
+        item.classList.add('active');
+      }
+    });
+
+    // 打开个人面板
+    profileBtn.addEventListener('click', function() {
+      var isOpen = profileSheet.classList.contains('show');
+      if (isOpen) {
+        closeProfile();
+      } else {
+        openProfile();
+      }
+    });
+
+    // 点击遮罩关闭
+    profileOverlay.addEventListener('click', closeProfile);
+
+    function openProfile() {
+      profileOverlay.classList.add('show');
+      profileSheet.classList.add('show');
+      document.body.style.overflow = 'hidden';
+      profileBtn.classList.add('active');
+    }
+
+    function closeProfile() {
+      profileOverlay.classList.remove('show');
+      profileSheet.classList.remove('show');
+      document.body.style.overflow = '';
+      profileBtn.classList.remove('active');
+    }
+
+    // 面板内主题切换
+    document.querySelectorAll('.profile-theme-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var theme = this.getAttribute('data-theme');
+        localStorage.setItem('xiaowei-theme', theme);
+        if (theme === 'auto') {
+          document.documentElement.removeAttribute('data-theme');
+        } else {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+        // 更新图标
+        var iconEl = document.getElementById('themeIcon');
+        if (iconEl) {
+          iconEl.textContent = theme === 'light' ? '☀️' : theme === 'dark' ? '🌙' : '🖥️';
+        }
+        // 更新选中状态
+        updateProfileThemeActive(theme);
+      });
+    });
+
+    function updateProfileThemeActive(theme) {
+      document.querySelectorAll('.profile-theme-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-theme') === theme);
+      });
+    }
+
+    // 初始化主题按钮选中状态
+    var savedTheme = localStorage.getItem('xiaowei-theme') || 'auto';
+    updateProfileThemeActive(savedTheme);
+  })();
+  </script>
+
 </body>
 </html>

@@ -5,8 +5,13 @@
   <% } %>
   <form method="POST" action="/register" class="auth-form">
     <div class="form-group">
-      <label for="username">用户名 *</label>
-      <input type="text" id="username" name="username" required minlength="2" maxlength="20" placeholder="输入用户名">
+      <label for="phone">手机号 *</label>
+      <input type="tel" id="phone" name="phone" maxlength="11" placeholder="输入11位手机号（用于登录）">
+      <small style="color:#888;font-size:12px">手机号和用户名至少填写一项</small>
+    </div>
+    <div class="form-group">
+      <label for="username">用户名</label>
+      <input type="text" id="username" name="username" minlength="2" maxlength="20" placeholder="输入用户名">
     </div>
     <div class="form-group">
       <label for="password">密码 *</label>
@@ -18,6 +23,6 @@
     </div>
     <button type="submit" class="btn btn-full">注册</button>
   </form>
-  <p class="auth-hint">已有账号？<a href="/login">去登录</a></p>
+  <p class="auth-hint">已有账号？<a href="/phone-login">手机号登录</a></p>
   <p class="auth-hint"><a href="/">← 返回首页</a></p>
 </div>

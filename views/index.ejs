@@ -9,37 +9,6 @@
   <a href="/upload" class="btn btn-lg">📤 上传你的声音</a>
 </div>
 
-<!-- 安装APP引导 -->
-<div class="install-banner" id="installBanner" style="display:none; background:linear-gradient(135deg,#4A90D9,#357ABD); color:#fff; padding:16px 20px; border-radius:12px; margin:16px 0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px">
-  <div>
-    <strong style="font-size:16px">📱 安装小伟播客APP</strong>
-    <p style="margin:4px 0 0; opacity:0.85; font-size:13px">添加到手机主屏幕，像原生APP一样使用</p>
-  </div>
-  <div style="display:flex; gap:8px">
-    <a href="/app" class="btn" style="background:#fff; color:#4A90D9; font-weight:bold; border-radius:8px; padding:8px 16px; text-decoration:none">📥 安装教程</a>
-    <button onclick="document.getElementById('installBanner').style.display='none'" style="background:none; border:1px solid rgba(255,255,255,0.5); color:#fff; border-radius:8px; padding:8px 12px; cursor:pointer">✕</button>
-  </div>
-</div>
-
-<script>
-// 检测是否应该显示安装引导（未安装为PWA时显示）
-(function() {
-  if (window.matchMedia('(display-mode: standalone)').matches) {
-    document.getElementById('installBanner').style.display = 'none';
-    return;
-  }
-  // 如果之前关闭过，不再显示
-  if (localStorage.getItem('installBannerClosed')) {
-    document.getElementById('installBanner').style.display = 'none';
-    return;
-  }
-  document.getElementById('installBanner').style.display = 'flex';
-  document.querySelector('#installBanner button').addEventListener('click', function() {
-    localStorage.setItem('installBannerClosed', 'true');
-  });
-})();
-</script>
-
 <div class="podcast-grid">
   <% if (podcasts && podcasts.length > 0) {
     podcasts.forEach(function(p) { %>

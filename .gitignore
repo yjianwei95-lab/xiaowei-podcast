@@ -2,5 +2,4 @@ node_modules/
 *.db
 *.log
 public/lib/
-uploads/*
-!uploads/.gitkeep
+uploads/.gitkeep
