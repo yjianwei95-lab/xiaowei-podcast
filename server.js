@@ -4,6 +4,7 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
+const ws = require('ws');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,7 +16,11 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
 // 优先使用 service_role key（后端需要写入权限），没有则用 anon key
 const supabaseKey = SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY;
-const supabase = createClient(SUPABASE_URL, supabaseKey);
+const supabase = createClient(SUPABASE_URL, supabaseKey, {
+  realtime: {
+    transport: ws
+  }
+});
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
