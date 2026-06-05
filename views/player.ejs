@@ -31,7 +31,14 @@
     <div id="comments-list"></div>
     <div class="comment-form">
       <input type="text" id="comment-nickname" placeholder="昵称（可选）" maxlength="20">
-      <textarea id="comment-content" placeholder="说点什么吧..." maxlength="500" rows="3"></textarea>
+      <div class="comment-input-wrap">
+        <textarea id="comment-content" placeholder="说点什么吧..." maxlength="500" rows="3"></textarea>
+        <button class="emoji-btn" onclick="toggleEmojiPicker()" title="选择表情">😀</button>
+        <div class="emoji-picker" id="emoji-picker">
+          <div class="emoji-title">选择表情</div>
+          <div class="emoji-grid" id="emoji-grid"></div>
+        </div>
+      </div>
       <button class="btn" onclick="submitComment()">发表评论</button>
     </div>
   </div>
@@ -65,6 +72,16 @@
 .comment-form input, .comment-form textarea, .donate-form input, .donate-form textarea {
   display:block; width:100%; margin:6px 0; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:14px; box-sizing:border-box;
 }
+.comment-input-wrap { position:relative; }
+.comment-input-wrap textarea { padding-right:40px; }
+.emoji-btn { position:absolute; right:6px; top:6px; width:28px; height:28px; border:none; background:transparent; font-size:18px; cursor:pointer; border-radius:4px; display:flex; align-items:center; justify-content:center; }
+.emoji-btn:hover { background:#eee; }
+.emoji-picker { display:none; position:absolute; right:0; top:36px; width:280px; background:#fff; border:1px solid #ddd; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.12); z-index:100; padding:8px; }
+.emoji-picker.show { display:block; }
+.emoji-title { font-size:12px; color:#999; margin-bottom:6px; }
+.emoji-grid { display:grid; grid-template-columns:repeat(8, 1fr); gap:2px; max-height:180px; overflow-y:auto; }
+.emoji-grid span { font-size:20px; cursor:pointer; padding:4px; border-radius:4px; text-align:center; }
+.emoji-grid span:hover { background:#f0f0f0; }
 .btn-donate { background:linear-gradient(135deg,#f7971e,#ffd200); color:#fff; border:none; }
 </style>
 
@@ -139,6 +156,51 @@ function submitDonation() {
 
 // 简单 HTML 转义
 function escHtml(s) { var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// ===== 表情选择器 =====
+var EMOJIS = ['😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','😘','🥰','😗','😙','😚','🙂','🤗','🤩','🤔','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐','😯','😪','😫','🥱','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🤑','😲','☹️','🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😰','😱','🥵','🥶','😳','🤪','😵','😡','😠','🤬','😷','🤒','🤕','🤢','🤮','🤧','😇','🥳','🥺','🤠','🤡','🤥','🤫','🤭','🧐','🤓','👻','💀','👽','🤖','😈','👿','👹','👺','💩','😺','😸','😹','😻','😼','😽','🙀','😿','😾'];
+
+function initEmojiGrid() {
+  var grid = document.getElementById('emoji-grid');
+  if (!grid || grid.children.length > 0) return;
+  EMOJIS.forEach(function(e) {
+    var span = document.createElement('span');
+    span.textContent = e;
+    span.onclick = function() { insertEmoji(e); };
+    grid.appendChild(span);
+  });
+}
+
+function toggleEmojiPicker() {
+  var picker = document.getElementById('emoji-picker');
+  if (!picker) return;
+  if (picker.classList.contains('show')) {
+    picker.classList.remove('show');
+  } else {
+    initEmojiGrid();
+    picker.classList.add('show');
+  }
+}
+
+function insertEmoji(emoji) {
+  var ta = document.getElementById('comment-content');
+  if (!ta) return;
+  var start = ta.selectionStart;
+  var end = ta.selectionEnd;
+  var val = ta.value;
+  ta.value = val.substring(0, start) + emoji + val.substring(end);
+  ta.selectionStart = ta.selectionEnd = start + emoji.length;
+  ta.focus();
+}
+
+// 点击页面其他地方关闭表情面板
+document.addEventListener('click', function(e) {
+  var picker = document.getElementById('emoji-picker');
+  var btn = document.querySelector('.emoji-btn');
+  if (picker && !picker.contains(e.target) && e.target !== btn) {
+    picker.classList.remove('show');
+  }
+});
 
 // 页面加载时拉取数据
 loadComments();
