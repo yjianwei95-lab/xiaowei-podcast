@@ -16,6 +16,7 @@
       您的浏览器不支持音频播放
     </audio>
   </div>
+
   <div class="share-area">
     <h3>🔗 分享这个节目</h3>
     <div class="share-link-box">
@@ -23,14 +24,123 @@
       <button class="btn" onclick="copyLink()">复制链接</button>
     </div>
   </div>
+
+  <!-- 评论区 -->
+  <div class="section-box" id="comments-section">
+    <h3>💬 评论区</h3>
+    <div id="comments-list"></div>
+    <div class="comment-form">
+      <input type="text" id="comment-nickname" placeholder="昵称（可选）" maxlength="20">
+      <textarea id="comment-content" placeholder="说点什么吧..." maxlength="500" rows="3"></textarea>
+      <button class="btn" onclick="submitComment()">发表评论</button>
+    </div>
+  </div>
+
+  <!-- 打赏区 -->
+  <div class="section-box" id="donation-section">
+    <h3>🎁 打赏区</h3>
+    <div id="donations-list"></div>
+    <button class="btn btn-donate" onclick="showDonateForm()">💰 我要打赏</button>
+    <div id="donate-form" style="display:none; margin-top:12px;">
+      <input type="text" id="donate-nickname" placeholder="昵称（可选）" maxlength="20">
+      <input type="number" id="donate-amount" placeholder="打赏金额（元）" min="0.01" step="0.01">
+      <textarea id="donate-message" placeholder="给主播留句话（可选）" maxlength="200" rows="2"></textarea>
+      <button class="btn btn-donate" onclick="submitDonation()">确认打赏</button>
+      <button class="btn" onclick="hideDonateForm()" style="background:#ccc;">取消</button>
+    </div>
+  </div>
+
   <a href="/" class="back-link">← 返回首页</a>
 </div>
 
+<style>
+.section-box { background:#f7f7f7; border-radius:12px; padding:16px; margin:16px 0; }
+.section-box h3 { margin:0 0 12px 0; font-size:16px; }
+.comment-item, .donation-item { background:#fff; border-radius:8px; padding:10px 12px; margin:8px 0; font-size:14px; }
+.comment-nickname, .donation-nickname { font-weight:600; color:#333; }
+.comment-time, .donation-time { color:#999; font-size:12px; margin-left:8px; }
+.comment-content { margin-top:6px; color:#444; white-space:pre-wrap; word-break:break-all; }
+.donation-amount { color:#e74c3c; font-weight:700; margin-left:8px; }
+.donation-message { margin-top:4px; color:#666; font-style:italic; }
+.comment-form input, .comment-form textarea, .donate-form input, .donate-form textarea {
+  display:block; width:100%; margin:6px 0; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:14px; box-sizing:border-box;
+}
+.btn-donate { background:linear-gradient(135deg,#f7971e,#ffd200); color:#fff; border:none; }
+</style>
+
 <script>
+var episodeUuid = '<%= podcast.uuid %>';
+
 function copyLink() {
   var input = document.getElementById('share-link');
-  input.select();
-  document.execCommand('copy');
-  alert('链接已复制！');
+  input.select(); document.execCommand('copy'); alert('链接已复制！');
 }
+
+// 加载评论
+function loadComments() {
+  fetch('/api/episodes/' + episodeUuid + '/comments').then(r=>r.json()).then(d=>{
+    if(!d.success) return;
+    var html = '';
+    if(d.comments.length===0) html = '<p style="color:#999;text-align:center;">暂无评论，来说两句吧～</p>';
+    d.comments.forEach(c=>{
+      html += '<div class="comment-item"><span class="comment-nickname">' + escHtml(c.nickname) + '</span><span class="comment-time">' + (c.created_at||'').slice(0,16).replace('T',' ') + '</span><div class="comment-content">' + escHtml(c.content) + '</div></div>';
+    });
+    document.getElementById('comments-list').innerHTML = html;
+  });
+}
+
+// 提交评论
+function submitComment() {
+  var nick = document.getElementById('comment-nickname').value;
+  var content = document.getElementById('comment-content').value;
+  if(!content.trim()) { alert('请输入评论内容'); return; }
+  fetch('/api/episodes/' + episodeUuid + '/comments', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({nickname:nick, content:content})
+  }).then(r=>r.json()).then(d=>{
+    if(d.success) { document.getElementById('comment-content').value=''; loadComments(); }
+    else alert(d.message||'提交失败');
+  });
+}
+
+// 加载打赏
+function loadDonations() {
+  fetch('/api/episodes/' + episodeUuid + '/donations').then(r=>r.json()).then(d=>{
+    if(!d.success) return;
+    var html = '';
+    if(d.donations.length===0) html = '<p style="color:#999;text-align:center;">暂无打赏，成为第一个打赏的人吧～</p>';
+    d.donations.forEach(dn=>{
+      html += '<div class="donation-item"><span class="donation-nickname">' + escHtml(dn.nickname) + '</span><span class="donation-amount">¥' + parseFloat(dn.amount).toFixed(2) + '</span><span class="donation-time">' + (dn.created_at||'').slice(0,16).replace('T',' ') + '</span>';
+      if(dn.message) html += '<div class="donation-message">' + escHtml(dn.message) + '</div>';
+      html += '</div>';
+    });
+    document.getElementById('donations-list').innerHTML = html;
+  });
+}
+
+// 显示打赏表单
+function showDonateForm() { document.getElementById('donate-form').style.display='block'; }
+function hideDonateForm() { document.getElementById('donate-form').style.display='none'; }
+
+// 提交打赏
+function submitDonation() {
+  var nick = document.getElementById('donate-nickname').value;
+  var amount = document.getElementById('donate-amount').value;
+  var msg = document.getElementById('donate-message').value;
+  if(!amount || parseFloat(amount)<=0) { alert('请输入打赏金额'); return; }
+  fetch('/api/episodes/' + episodeUuid + '/donations', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({nickname:nick, amount:amount, message:msg})
+  }).then(r=>r.json()).then(d=>{
+    if(d.success) { document.getElementById('donate-form').style.display='none'; document.getElementById('donate-amount').value=''; document.getElementById('donate-message').value=''; loadDonations(); }
+    else alert(d.message||'提交失败');
+  });
+}
+
+// 简单 HTML 转义
+function escHtml(s) { var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// 页面加载时拉取数据
+loadComments();
+loadDonations();
 </script>

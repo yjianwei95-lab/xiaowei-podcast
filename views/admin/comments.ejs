@@ -1,0 +1,35 @@
+<h2>💬 评论管理</h2>
+<p style="color:#999;font-size:13px;">共 <%= comments.length %> 条评论</p>
+
+<% if (comments.length === 0) { %>
+  <p style="text-align:center;color:#999;padding:40px;">暂无评论</p>
+<% } else { %>
+  <table class="data-table">
+    <tr>
+      <th>昵称</th>
+      <th>评论内容</th>
+      <th>所属节目</th>
+      <th>时间</th>
+      <th>操作</th>
+    </tr>
+    <% comments.forEach(c => { %>
+    <tr>
+      <td><%= c.nickname %></td>
+      <td style="max-width:300px;word-break:break-all;"><%= c.content %></td>
+      <td><%= c.episodes && c.episodes.title ? c.episodes.title : '未知' %></td>
+      <td><%= (c.created_at||'').slice(0,16).replace('T',' ') %></td>
+      <td>
+        <form method="POST" action="/xiaowei-podcast-admin/comments/delete/<%= c.id %>" style="display:inline;" onsubmit="return confirm('确定删除此评论？')">
+          <button type="submit" class="btn-btn" style="background:#e74c3c;color:#fff;padding:4px 10px;border:none;border-radius:4px;cursor:pointer;">删除</button>
+        </form>
+      </td>
+    </tr>
+    <% }) %>
+  </table>
+<% } %>
+
+<style>
+.data-table { width:100%; border-collapse:collapse; margin-top:16px; font-size:14px; }
+.data-table th, .data-table td { padding:8px 10px; border-bottom:1px solid #eee; text-align:left; }
+.data-table th { background:#f5f5f5; font-weight:600; }
+</style>

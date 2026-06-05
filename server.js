@@ -658,6 +658,77 @@ app.get('/api/me', async (req, res) => {
 });
 
 // ===================================================================
+// 评论和打赏 API
+// ===================================================================
+
+// 获取某节目的评论列表
+app.get('/api/episodes/:uuid/comments', async (req, res) => {
+  try {
+    const { data: comments, error } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('episode_uuid', req.params.uuid)
+      .eq('status', 1)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ success: true, comments: comments || [] });
+  } catch (e) {
+    res.json({ success: false, message: e.message });
+  }
+});
+
+// 提交评论
+app.post('/api/episodes/:uuid/comments', async (req, res) => {
+  const { nickname, content } = req.body;
+  if (!content || !content.trim()) return res.json({ success: false, message: '评论内容不能为空' });
+  if (content.length > 500) return res.json({ success: false, message: '评论内容不能超过500字' });
+  try {
+    const { data: comment, error } = await supabase
+      .from('comments')
+      .insert([{ episode_uuid: req.params.uuid, nickname: (nickname || '匿名').trim().slice(0, 20), content: content.trim(), status: 1 }])
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, comment });
+  } catch (e) {
+    res.json({ success: false, message: e.message });
+  }
+});
+
+// 获取某节目的打赏列表
+app.get('/api/episodes/:uuid/donations', async (req, res) => {
+  try {
+    const { data: donations, error } = await supabase
+      .from('donations')
+      .select('*')
+      .eq('episode_uuid', req.params.uuid)
+      .eq('status', 1)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ success: true, donations: donations || [] });
+  } catch (e) {
+    res.json({ success: false, message: e.message });
+  }
+});
+
+// 提交打赏记录
+app.post('/api/episodes/:uuid/donations', async (req, res) => {
+  const { nickname, amount, message } = req.body;
+  if (!amount || parseFloat(amount) <= 0) return res.json({ success: false, message: '打赏金额必须大于0' });
+  try {
+    const { data: donation, error } = await supabase
+      .from('donations')
+      .insert([{ episode_uuid: req.params.uuid, nickname: (nickname || '匿名').trim().slice(0, 20), amount: parseFloat(amount), message: (message || '').trim().slice(0, 200), status: 1 }])
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, donation });
+  } catch (e) {
+    res.json({ success: false, message: e.message });
+  }
+});
+
+// ===================================================================
 // 后台管理
 // ===================================================================
 
@@ -872,6 +943,50 @@ app.post('/xiaowei-podcast-admin/password', requireAdmin, async (req, res) => {
     }
   } catch (e) {
     renderWithLayout(req, res, 'admin/password', { flash: { category: 'error', message: '修改失败' } });
+  }
+});
+
+// ===================================================================
+// 评论管理
+// ===================================================================
+
+app.get('/xiaowei-podcast-admin/comments', requireAdmin, async (req, res) => {
+  try {
+    const { data: comments, error } = await supabase
+      .from('comments')
+      .select('*, episodes(title)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    renderWithLayout(req, res, 'admin/comments', { comments: comments || [], title: '评论管理' });
+  } catch (e) {
+    console.error('评论管理错误:', e.message);
+    renderWithLayout(req, res, 'admin/comments', { comments: [], title: '评论管理' });
+  }
+});
+
+app.post('/xiaowei-podcast-admin/comments/delete/:id', requireAdmin, async (req, res) => {
+  try {
+    await supabase.from('comments').update({ status: 0 }).eq('id', req.params.id);
+  } catch (e) { console.error('delete comment error:', e.message); }
+  res.redirect('/xiaowei-podcast-admin/comments');
+});
+
+// ===================================================================
+// 打赏记录
+// ===================================================================
+
+app.get('/xiaowei-podcast-admin/donations', requireAdmin, async (req, res) => {
+  try {
+    const { data: donations, error } = await supabase
+      .from('donations')
+      .select('*, episodes(title)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    const totalAmount = (donations || []).reduce((s, d) => s + parseFloat(d.amount || 0), 0);
+    renderWithLayout(req, res, 'admin/donations', { donations: donations || [], totalAmount, title: '打赏记录' });
+  } catch (e) {
+    console.error('打赏记录错误:', e.message);
+    renderWithLayout(req, res, 'admin/donations', { donations: [], totalAmount: 0, title: '打赏记录' });
   }
 });
 
