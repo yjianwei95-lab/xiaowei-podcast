@@ -247,7 +247,7 @@ app.use((req, res, next) => {
   next();
 });
 // 音频文件：从 Supabase Storage 读取（/uploads/:filename 路由在下方定义）
-app.use(session({ secret: crypto.randomBytes(32).toString('hex'), resave: false, saveUninitialized: false, cookie: { maxAge: 24 * 60 * 60 * 1000, sameSite: 'none', secure: true } }));
+app.use(session({ secret: process.env.SESSION_SECRET || 'xiaowei-podcast-fixed-secret-2026', resave: false, saveUninitialized: false, cookie: { maxAge: 24 * 60 * 60 * 1000, sameSite: 'none', secure: true } }));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
