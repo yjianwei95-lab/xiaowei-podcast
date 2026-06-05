@@ -29,8 +29,8 @@
   <div class="section-box" id="comments-section">
     <h3>💬 评论区</h3>
     <div id="comments-list"></div>
+    <% if (user) { %>
     <div class="comment-form">
-      <input type="text" id="comment-nickname" placeholder="昵称（可选）" maxlength="20">
       <div class="comment-input-wrap">
         <textarea id="comment-content" placeholder="说点什么吧..." maxlength="500" rows="3"></textarea>
         <button class="emoji-btn" onclick="toggleEmojiPicker()" title="选择表情">😀</button>
@@ -40,7 +40,14 @@
         </div>
       </div>
       <button class="btn" onclick="submitComment()">发表评论</button>
+      <div style="font-size:12px; color:#999; margin-top:6px;">以 <b><%= user.nickname || user.username %></b> 的身份评论 · <a href="/logout" style="color:#999;">退出</a></div>
     </div>
+    <% } else { %>
+    <div style="text-align:center; padding:20px; color:#999;">
+      <p>请先登录后评论</p>
+      <a href="/login" class="btn" style="display:inline-block; width:auto; padding:8px 24px; margin-top:8px; text-decoration:none;">登录 / 注册</a>
+    </div>
+    <% } %>
   </div>
 
   <a href="/" class="back-link">← 返回首页</a>
@@ -88,12 +95,11 @@ function loadComments() {
 
 // 提交评论
 function submitComment() {
-  var nick = document.getElementById('comment-nickname').value;
   var content = document.getElementById('comment-content').value;
   if(!content.trim()) { alert('请输入评论内容'); return; }
   fetch('/api/episodes/' + episodeUuid + '/comments', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({nickname:nick, content:content})
+    body:JSON.stringify({content:content})
   }).then(r=>r.json()).then(d=>{
     if(d.success) { document.getElementById('comment-content').value=''; loadComments(); }
     else alert(d.message||'提交失败');

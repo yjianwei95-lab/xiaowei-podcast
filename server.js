@@ -2,6 +2,7 @@ const fs = require('fs');
 const http = require('http');
 const express = require('express');
 const session = require('express-session');
+const bcrypt = require('bcryptjs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const ws = require('ws');
@@ -353,7 +354,7 @@ app.get('/play/:uuid', async (req, res) => {
         platform: deviceInfo.platform
       }]);
 
-    renderWithLayout(req, res, 'player', { podcast, audioUrl, title: podcast.title, req });
+    renderWithLayout(req, res, 'player', { podcast, audioUrl, title: podcast.title, req, user: req.session.userId ? { id: req.session.userId, username: req.session.username, nickname: req.session.nickname } : null });
   } catch (e) {
     console.error('播放页面错误:', e.message);
     renderWithLayout(req, res, '404', { title: '未找到' });
@@ -657,6 +658,24 @@ app.get('/api/me', async (req, res) => {
   }
 });
 
+// 注册页面
+app.get('/register', (req, res) => {
+  if (req.session.userId) return res.redirect('/');
+  res.render('register', { title: '注册 - 小伟播客' });
+});
+
+// 登录页面
+app.get('/login', (req, res) => {
+  if (req.session.userId) return res.redirect('/');
+  res.render('login', { title: '登录 - 小伟播客' });
+});
+
+// 登出
+app.get('/logout', (req, res) => {
+  req.session.destroy();
+  res.redirect('/');
+});
+
 // ===================================================================
 // 评论和打赏 API
 // ===================================================================
@@ -677,15 +696,17 @@ app.get('/api/episodes/:uuid/comments', async (req, res) => {
   }
 });
 
-// 提交评论
+// 提交评论（需要登录）
 app.post('/api/episodes/:uuid/comments', async (req, res) => {
-  const { nickname, content } = req.body;
+  if (!req.session.userId) return res.json({ success: false, message: '请先登录再评论' });
+  const { content } = req.body;
   if (!content || !content.trim()) return res.json({ success: false, message: '评论内容不能为空' });
   if (content.length > 500) return res.json({ success: false, message: '评论内容不能超过500字' });
   try {
+    const nickname = req.session.nickname || req.session.username || '匿名';
     const { data: comment, error } = await supabase
       .from('comments')
-      .insert([{ episode_uuid: req.params.uuid, nickname: (nickname || '匿名').trim().slice(0, 20), content: content.trim(), status: 1 }])
+      .insert([{ episode_uuid: req.params.uuid, nickname: nickname.trim().slice(0, 20), content: content.trim(), status: 1 }])
       .select()
       .single();
     if (error) throw error;
