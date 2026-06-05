@@ -165,7 +165,7 @@ app.get('/debug', async (req, res) => {
 
 // 音频文件路由（从 Supabase Storage 重定向）
 app.get('/uploads/:filename', (req, res) => {
-  const redirectUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/episodes/${req.params.filename}`;
+  const redirectUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/${req.params.filename}`;
   res.redirect(302, redirectUrl);
 });
 
@@ -209,7 +209,7 @@ app.get('/play/:uuid', async (req, res) => {
     if (error || !podcast) return renderWithLayout(req, res, '404', { title: '未找到' });
 
     // 生成 Supabase Storage 音频 URL（公网可访问）
-    const audioUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/episodes/${podcast.filename}`;
+    const audioUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/${podcast.filename}`;
 
     // 增加播放次数
     await supabase
@@ -252,7 +252,7 @@ app.post('/upload', (req, res) => {
     try {
       // 1. 上传音频文件到 Supabase Storage
       const fileBuffer = fs.readFileSync(req.file.path);
-      const filePath = `episodes/${req.file.filename}`;
+      const filePath = `${req.file.filename}`;
 
       const { error: uploadError } = await supabase.storage
         .from('audio')
@@ -617,7 +617,7 @@ app.post('/admin/delete/:id', requireAdmin, async (req, res) => {
     const { data: episode } = await supabase.from('episodes').select('uuid, filename').eq('id', req.params.id).single();
     if (episode) {
       // 删除 Storage 中的音频文件
-      await supabase.storage.from('audio').remove([`episodes/${episode.filename}`]);
+      await supabase.storage.from('audio').remove([`${episode.filename}`]);
       // 删除本地文件（如果存在）
       const localPath = path.join(UPLOAD_DIR, episode.filename);
       if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
@@ -661,13 +661,13 @@ app.post('/admin/replace-audio/:id', requireAdmin, (req, res) => {
       const { data: episode } = await supabase.from('episodes').select('filename, uuid').eq('id', req.params.id).single();
       if (episode) {
         // 删除旧文件
-        await supabase.storage.from('audio').remove([`episodes/${episode.filename}`]);
+        await supabase.storage.from('audio').remove([`${episode.filename}`]);
         const oldLocal = path.join(UPLOAD_DIR, episode.filename);
         if (fs.existsSync(oldLocal)) fs.unlinkSync(oldLocal);
 
         // 上传新文件
         const fileBuffer = fs.readFileSync(req.file.path);
-        await supabase.storage.from('audio').upload(`episodes/${req.file.filename}`, fileBuffer, { contentType: 'audio/mpeg' });
+        await supabase.storage.from('audio').upload(`${req.file.filename}`, fileBuffer, { contentType: 'audio/mpeg' });
         fs.unlinkSync(req.file.path);
 
         // 更新数据库
