@@ -213,7 +213,6 @@ async function getStats() {
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 
 // 音频文件上传：本地暂存，然后上传到 Supabase Storage
 const storage = multer.diskStorage({
