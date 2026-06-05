@@ -15,7 +15,7 @@
         <td><span class="ip-tag"><%= p.uploader_ip %></span></td>
         <td><%= p.play_count %></td>
         <td><small><%= p.original_name %><br><%= (p.file_size / 1048576).toFixed(1) %> MB</small><br><audio src="/uploads/<%= p.filename %>?v=<%= p.created_at ? Date.parse(p.created_at) : '' %>" controls style="width:100px;height:28px;margin-top:4px"></audio></td>
-        <td class="cell-date"><%= p.created_at ? p.created_at.slice(0, 10) : '-' %></td>
+        <td class="cell-date"><%= p.created_at ? new Date(p.created_at).toLocaleDateString('zh-CN', {timeZone:'Asia/Shanghai'}).replace(/\//g, '-') : '-' %></td>
         <td>
           <form method="POST" action="/xiaowei-podcast-admin/toggle/<%= p.id %>" style="display:inline">
             <button class="btn-status <%= p.status ? 'published' : 'draft' %>"><%= p.status ? '已发布' : '已隐藏' %></button>

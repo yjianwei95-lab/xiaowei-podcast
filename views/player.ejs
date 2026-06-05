@@ -8,7 +8,7 @@
     <div class="player-meta">
       <span>👤 <%= podcast.uploader_name %></span>
       <span>▶️ <%= podcast.play_count %> 次播放</span>
-      <span>📅 <%= podcast.created_at.slice(0, 10) %></span>
+      <span>📅 <%= new Date(podcast.created_at).toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit' }).replace(/\//g, '-') %></span>
       <span>📦 <%= (podcast.file_size / 1048576).toFixed(1) %> MB</span>
     </div>
     <audio id="audio-player" class="audio-player" controls preload="metadata">
@@ -100,7 +100,7 @@ function loadComments() {
     var html = '';
     if(d.comments.length===0) html = '<p style="color:#999;text-align:center;">暂无评论，来说两句吧～</p>';
     d.comments.forEach(c=>{
-      html += '<div class="comment-item"><span class="comment-nickname">' + escHtml(c.nickname) + '</span><span class="comment-time">' + (c.created_at||'').slice(0,16).replace('T',' ') + '</span><div class="comment-content">' + escHtml(c.content) + '</div></div>';
+      html += '<div class="comment-item"><span class="comment-nickname">' + escHtml(c.nickname) + '</span><span class="comment-time">' + formatLocalTime(c.created_at) + '</span><div class="comment-content">' + escHtml(c.content) + '</div></div>';
     });
     document.getElementById('comments-list').innerHTML = html;
   });
@@ -127,7 +127,7 @@ function loadDonations() {
     var html = '';
     if(d.donations.length===0) html = '<p style="color:#999;text-align:center;">暂无打赏，成为第一个打赏的人吧～</p>';
     d.donations.forEach(dn=>{
-      html += '<div class="donation-item"><span class="donation-nickname">' + escHtml(dn.nickname) + '</span><span class="donation-amount">¥' + parseFloat(dn.amount).toFixed(2) + '</span><span class="donation-time">' + (dn.created_at||'').slice(0,16).replace('T',' ') + '</span>';
+      html += '<div class="donation-item"><span class="donation-nickname">' + escHtml(dn.nickname) + '</span><span class="donation-amount">¥' + parseFloat(dn.amount).toFixed(2) + '</span><span class="donation-time">' + formatLocalTime(dn.created_at) + '</span>';
       if(dn.message) html += '<div class="donation-message">' + escHtml(dn.message) + '</div>';
       html += '</div>';
     });
@@ -156,6 +156,18 @@ function submitDonation() {
 
 // 简单 HTML 转义
 function escHtml(s) { var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// UTC 时间转本地北京时间
+function formatLocalTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  var y = d.getFullYear();
+  var m = String(d.getMonth()+1).padStart(2, '0');
+  var day = String(d.getDate()).padStart(2, '0');
+  var h = String(d.getHours()).padStart(2, '0');
+  var min = String(d.getMinutes()).padStart(2, '0');
+  return y + '-' + m + '-' + day + ' ' + h + ':' + min;
+}
 
 // ===== 表情选择器 =====
 var EMOJIS = ['😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','😘','🥰','😗','😙','😚','🙂','🤗','🤩','🤔','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐','😯','😪','😫','🥱','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🤑','😲','☹️','🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😰','😱','🥵','🥶','😳','🤪','😵','😡','😠','🤬','😷','🤒','🤕','🤢','🤮','🤧','😇','🥳','🥺','🤠','🤡','🤥','🤫','🤭','🧐','🤓','👻','💀','👽','🤖','😈','👿','👹','👺','💩','😺','😸','😹','😻','😼','😽','🙀','😿','😾'];

@@ -40,7 +40,7 @@
         <td><%= p.title %></td>
         <td><%= p.uploader_name %><% if (p.uploader_ip) { %><span class="ip-tag"><%= p.uploader_ip %></span><% } %></td>
         <td><%= p.play_count %></td>
-        <td class="cell-date"><%= p.created_at.slice(0, 16).replace('T', ' ') %></td>
+        <td class="cell-date"><%= new Date(p.created_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}).replace(/\//g, '-') %></td>
         <td><span class="badge <%= p.status ? 'badge-on' : 'badge-off' %>"><%= p.status ? '已发布' : '已隐藏' %></span></td>
       </tr>
       <% }); } else { %>
@@ -65,7 +65,7 @@
           <td><span class="ip-tag"><%= v.ip %></span></td>
           <td><%= deviceIcon %> <%= deviceLabel %></td>
           <td><%= osLabel %></td>
-          <td class="cell-date"><%= v.visited_at ? v.visited_at.slice(0, 19).replace('T', ' ') : '-' %></td>
+          <td class="cell-date"><%= v.visited_at ? new Date(v.visited_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}).replace(/\//g, '-') : '-' %></td>
         </tr>
       <% }); } else { %>
         <tr><td colspan="5" class="empty-cell">暂无访问记录</td></tr>

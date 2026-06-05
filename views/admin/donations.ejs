@@ -19,7 +19,7 @@
       <td style="color:#e74c3c;font-weight:600;">¥<%= parseFloat(d.amount).toFixed(2) %></td>
       <td style="max-width:250px;word-break:break-all;color:#666;font-style:italic;"><%= d.message || '-' %></td>
       <td><%= d.episodes && d.episodes.title ? d.episodes.title : '未知' %></td>
-      <td><%= (d.created_at||'').slice(0,16).replace('T',' ') %></td>
+      <td><%= d.created_at ? new Date(d.created_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}).replace(/\//g, '-') : '-' %></td>
     </tr>
     <% }) %>
   </table>

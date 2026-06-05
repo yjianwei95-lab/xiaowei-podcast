@@ -20,7 +20,7 @@
       <div class="card-meta">
         <span>👤 <%= p.uploader_name %></span>
         <span>▶️ <%= p.play_count %> 次播放</span>
-        <span>📅 <%= p.created_at.slice(0, 10) %></span>
+        <span>📅 <%= new Date(p.created_at).toLocaleDateString('zh-CN', {timeZone:'Asia/Shanghai'}).replace(/\//g, '-') %></span>
         <span>📦 <%= p.file_size ? (p.file_size / 1048576).toFixed(1) + ' MB' : '未知大小' %></span>
       </div>
     </div>
