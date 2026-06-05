@@ -739,3 +739,4 @@ console.log('  🔑 默认密码: admin123');
 console.log('  ⚠️  首次登录后请尽快修改密码！');
 console.log('='.repeat(55));
 app.listen(PORT, '0.0.0.0');
+// force redeploy Sat Jun  6 03:20:23     2026
