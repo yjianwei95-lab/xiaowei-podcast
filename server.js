@@ -129,6 +129,36 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// 诊断路由
+app.get('/debug', async (req, res) => {
+  const diagnostics = {
+    env: {
+      SUPABASE_URL: SUPABASE_URL ? SUPABASE_URL.replace(/\.co.*/, '.co') + '...' : '(未设置)',
+      SUPABASE_SERVICE_KEY: SUPABASE_SERVICE_KEY ? '已设置 (长度:' + SUPABASE_SERVICE_KEY.length + ')' : '(未设置)',
+      SUPABASE_ANON_KEY: SUPABASE_ANON_KEY ? '已设置 (长度:' + SUPABASE_ANON_KEY.length + ')' : '(未设置)',
+      supabaseKey: supabaseKey ? '已设置 (长度:' + supabaseKey.length + ')' : '(未设置)',
+      PORT: process.env.PORT || '(默认3000)'
+    },
+    connection: null,
+    episodes: null,
+    error: null
+  };
+  try {
+    const { data: episodes, error } = await supabase.from('episodes').select('*').limit(3);
+    if (error) {
+      diagnostics.error = error.message;
+      diagnostics.connection = '失败';
+    } else {
+      diagnostics.connection = '成功';
+      diagnostics.episodes = { count: episodes ? episodes.length : 0, first: episodes && episodes[0] ? episodes[0].title : null };
+    }
+  } catch (e) {
+    diagnostics.error = e.message;
+    diagnostics.connection = '异常';
+  }
+  res.json(diagnostics);
+});
+
 // 首页
 app.get('/', async (req, res) => {
   try {
@@ -138,11 +168,15 @@ app.get('/', async (req, res) => {
       .eq('status', 1)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('【首页Supabase错误】', error.message, error);
+      throw error;
+    }
+    console.log('【首页查询成功】获取到', podcasts ? podcasts.length : 0, '条节目');
     const stats = await getStats();
     renderWithLayout(req, res, 'index', { podcasts: podcasts || [], stats, title: '小伟播客' });
   } catch (e) {
-    console.error('首页错误:', e.message);
+    console.error('【首页错误】', e.message, e);
     renderWithLayout(req, res, 'index', { podcasts: [], stats: { totalPodcasts:0, totalPlayed:0, totalVisitors:0, todayVisitors:0, totalSize:0 }, title: '小伟播客' });
   }
 });
