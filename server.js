@@ -38,6 +38,16 @@ const AUDIO_CONTENT_TYPES = {
   'flac': 'audio/flac'
 };
 
+// 公告数据（可后续迁移到数据库）
+const ANNOUNCEMENTS = [
+  { id: 1, text: '🎉 小伟播客 v1.0.2 全新发布！支持手机号登录、主题切换、收藏功能', date: '2026-06-06' },
+  { id: 2, text: '📢 欢迎上传你的声音作品，分享你的故事！', date: '2026-06-06' },
+  { id: 3, text: '🔥 热门节目推荐：点击首页「热门排行」查看', date: '2026-06-06' },
+];
+
+// 标签关键词（用于自动提取）
+const TAG_KEYWORDS = ['音乐','故事','科技','生活','教育','娱乐','新闻','健康','商业','投资','游戏','电影','读书','旅行','美食','运动','情感','心理','历史','文化','科学','技术','播客','访谈','脱口秀','相声','评书','有声书','电台','演唱会','怀旧','励志','职场','创业','理财','编程','AI','人工智能','大数据','区块链'];
+
 // ===================================================================
 // 工具函数
 // ===================================================================
@@ -344,10 +354,45 @@ app.get('/', async (req, res) => {
     }
     console.log('【首页查询成功】获取到', podcasts ? podcasts.length : 0, '条节目');
     const stats = await getStats();
-    renderWithLayout(req, res, 'index', { podcasts: podcasts || [], stats, title: '小伟播客' });
+
+    // 热门排行 Top 5（按播放量）
+    const hotPodcasts = [...(podcasts || [])].sort((a, b) => (b.play_count || 0) - (a.play_count || 0)).slice(0, 5);
+
+    // 最近更新 Top 3
+    const recentPodcasts = [...(podcasts || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 3);
+
+    // 标签提取（从标题和描述中提取关键词）
+    const tags = [...new Set((podcasts || []).flatMap(p =>
+      TAG_KEYWORDS.filter(t => (p.title || '').includes(t) || (p.description || '').includes(t))
+    ))];
+
+    // 热门创作者 Top 5（按上传数量）
+    const creatorCount = {};
+    (podcasts || []).forEach(p => { creatorCount[p.uploader_name] = (creatorCount[p.uploader_name] || 0) + 1; });
+    const topCreators = Object.entries(creatorCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
+
+    renderWithLayout(req, res, 'index', {
+      podcasts: podcasts || [],
+      stats,
+      hotPodcasts,
+      recentPodcasts,
+      tags,
+      topCreators,
+      announcements: ANNOUNCEMENTS,
+      title: '小伟播客'
+    });
   } catch (e) {
     console.error('【首页错误】', e.message, e);
-    renderWithLayout(req, res, 'index', { podcasts: [], stats: { totalPodcasts:0, totalPlayed:0, totalVisitors:0, todayVisitors:0, totalSize:0 }, title: '小伟播客' });
+    renderWithLayout(req, res, 'index', {
+      podcasts: [],
+      stats: { totalPodcasts:0, totalPlayed:0, totalVisitors:0, todayVisitors:0, totalSize:0 },
+      hotPodcasts: [],
+      recentPodcasts: [],
+      tags: [],
+      topCreators: [],
+      announcements: ANNOUNCEMENTS,
+      title: '小伟播客'
+    });
   }
 });
 

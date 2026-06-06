@@ -1,36 +1,274 @@
-<div class="hero">
-  <h1>🎙️ 小伟播客</h1>
-  <p class="subtitle">上传你的声音 · 分享你的故事</p>
-  <div class="stats-bar">
-    <span>📚 <%= stats.totalPodcasts %> 个节目</span>
-    <span>▶️ <%= stats.totalPlayed %> 次播放</span>
-    <span>👥 <%= stats.totalVisitors %> 次访问</span>
+<div class="home-page">
+  <!-- 公告滚动条 -->
+  <div class="announcement-bar" id="announcementBar">
+    <div class="announcement-track" id="announcementTrack">
+      <% (announcements || []).forEach(function(a) { %>
+        <span class="announcement-item"><%= a.text %></span>
+      <% }); %>
+    </div>
   </div>
-  <a href="/upload" class="btn btn-lg">📤 上传你的声音</a>
-</div>
 
-<div class="podcast-grid">
-  <% if (podcasts && podcasts.length > 0) {
-    podcasts.forEach(function(p) { %>
-  <a href="/play/<%= p.uuid %>" class="podcast-card">
-    <div class="card-icon">🎧</div>
-    <div class="card-body">
-      <h3><%= p.title %></h3>
-      <p class="card-desc"><%= p.description ? p.description.slice(0, 60) + (p.description.length > 60 ? '...' : '') : '暂无描述' %></p>
-      <div class="card-meta">
-        <span>👤 <%= p.uploader_name %></span>
-        <span>▶️ <%= p.play_count %> 次播放</span>
-        <span>📅 <%= new Date(p.created_at).toLocaleDateString('zh-CN', {timeZone:'Asia/Shanghai'}).replace(/\//g, '-') %></span>
-        <span>📦 <%= p.file_size ? (p.file_size / 1048576).toFixed(1) + ' MB' : '未知大小' %></span>
+  <!-- Hero 区域 -->
+  <div class="hero">
+    <h1>🎙️ 小伟播客</h1>
+    <p class="subtitle">上传你的声音 · 分享你的故事</p>
+    <div class="stats-bar">
+      <span>📚 <%= stats.totalPodcasts %> 个节目</span>
+      <span>▶️ <%= stats.totalPlayed %> 次播放</span>
+      <span>👥 <%= stats.todayVisitors %> 今日访问</span>
+    </div>
+    <!-- 搜索框 -->
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" class="search-input" placeholder="搜索节目、创作者..." autocomplete="off">
+      <button class="search-clear" id="searchClear" style="display:none" aria-label="清除搜索">✕</button>
+    </div>
+    <a href="/upload" class="btn btn-lg">📤 上传你的声音</a>
+  </div>
+
+  <!-- 主内容 + 侧边栏 -->
+  <div class="main-layout">
+    <!-- 主内容区 -->
+    <div class="main-content">
+      <!-- 标签筛选 -->
+      <div class="tag-bar" id="tagBar">
+        <button class="tag-btn active" data-tag="all">全部</button>
+        <% (tags || []).forEach(function(t) { %>
+          <button class="tag-btn" data-tag="<%= t %>"><%= t %></button>
+        <% }); %>
+      </div>
+
+      <!-- 节目网格 -->
+      <div class="podcast-grid" id="podcastGrid">
+        <% if (podcasts && podcasts.length > 0) {
+          podcasts.forEach(function(p) { %>
+          <a href="/play/<%= p.uuid %>" class="podcast-card" data-title="<%= (p.title||'').replace(/"/g,'&quot;') %>" data-desc="<%= (p.description||'').replace(/"/g,'&quot;') %>" data-creator="<%= (p.uploader_name||'').replace(/"/g,'&quot;') %>">
+            <div class="card-cover">
+              <span class="card-cover-icon">🎧</span>
+              <button class="card-fav" data-uuid="<%= p.uuid %>" data-title="<%= (p.title||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') %>" aria-label="收藏">🤍</button>
+            </div>
+            <div class="card-body">
+              <h3><%= p.title %></h3>
+              <p class="card-desc"><%= p.description ? p.description.slice(0, 80) + (p.description.length > 80 ? '...' : '') : '暂无描述' %></p>
+              <div class="card-meta">
+                <span>👤 <%= p.uploader_name %></span>
+                <span>▶️ <%= p.play_count %> 次</span>
+                <span>📅 <%= new Date(p.created_at).toLocaleDateString('zh-CN', {timeZone:'Asia/Shanghai'}).replace(/\//g, '-') %></span>
+              </div>
+            </div>
+          </a>
+          <% });
+        } else { %>
+          <div class="empty-state">
+            <p>📭 还没有人上传声音</p>
+            <p>来做第一个分享者吧！</p>
+            <a href="/upload" class="btn">📤 上传声音</a>
+          </div>
+        <% } %>
+      </div>
+
+      <!-- 收藏列表（搜索/标签无结果时显示） -->
+      <div class="fav-section" id="favSection" style="display:none">
+        <h2 class="section-heading">❤️ 我的收藏</h2>
+        <div class="podcast-grid" id="favGrid"></div>
       </div>
     </div>
-  </a>
-  <% });
-  } else { %>
-  <div class="empty-state">
-    <p>📭 还没有人上传声音</p>
-    <p>来做第一个分享者吧！</p>
-    <a href="/upload" class="btn">📤 上传声音</a>
+
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+      <!-- 热门排行 -->
+      <div class="sidebar-card">
+        <h3 class="sidebar-title">🔥 热门排行</h3>
+        <ol class="rank-list">
+          <% (hotPodcasts || []).forEach(function(p, i) { %>
+            <li class="rank-item">
+              <span class="rank-num rank-<%= i+1 %>"><%= i+1 %></span>
+              <a href="/play/<%= p.uuid %>" class="rank-link"><%= p.title.length > 18 ? p.title.slice(0,18)+'…' : p.title %></a>
+              <span class="rank-plays"><%= p.play_count %> 次</span>
+            </li>
+          <% }); %>
+          <% if (!hotPodcasts || hotPodcasts.length === 0) { %>
+            <li class="rank-empty">暂无数据</li>
+          <% } %>
+        </ol>
+      </div>
+
+      <!-- 最近更新 -->
+      <div class="sidebar-card">
+        <h3 class="sidebar-title">🆕 最近更新</h3>
+        <ul class="recent-list">
+          <% (recentPodcasts || []).forEach(function(p) { %>
+            <li class="recent-item">
+              <a href="/play/<%= p.uuid %>" class="recent-link">
+                <span class="recent-title"><%= p.title.length > 16 ? p.title.slice(0,16)+'…' : p.title %></span>
+                <span class="recent-time"><%= new Date(p.created_at).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'}).replace(/\//g,'-') %></span>
+              </a>
+            </li>
+          <% }); %>
+          <% if (!recentPodcasts || recentPodcasts.length === 0) { %>
+            <li class="rank-empty">暂无数据</li>
+          <% } %>
+        </ul>
+      </div>
+
+      <!-- 热门创作者 -->
+      <div class="sidebar-card">
+        <h3 class="sidebar-title">🏆 热门创作者</h3>
+        <ul class="creator-list">
+          <% (topCreators || []).forEach(function(c) { %>
+            <li class="creator-item">
+              <span class="creator-avatar">👤</span>
+              <span class="creator-name"><%= c.name %></span>
+              <span class="creator-count"><%= c.count %> 期</span>
+            </li>
+          <% }); %>
+          <% if (!topCreators || topCreators.length === 0) { %>
+            <li class="rank-empty">暂无数据</li>
+          <% } %>
+        </ul>
+      </div>
+    </aside>
   </div>
-  <% } %>
 </div>
+
+<script>
+(function() {
+  // 搜索功能
+  var searchInput = document.getElementById('searchInput');
+  var searchClear = document.getElementById('searchClear');
+  var podcastGrid = document.getElementById('podcastGrid');
+  var cards = podcastGrid ? podcastGrid.querySelectorAll('.podcast-card') : [];
+
+  // 统一过滤
+  var activeTag = 'all';
+  function getSearchQ() { return searchInput ? searchInput.value.trim().toLowerCase() : ''; }
+  function shouldShowCard(card) {
+    var tag = activeTag;
+    var q = getSearchQ();
+    var title = (card.getAttribute('data-title') || '').toLowerCase();
+    var desc = (card.getAttribute('data-desc') || '').toLowerCase();
+    var creator = (card.getAttribute('data-creator') || '').toLowerCase();
+    // 搜索匹配
+    if (q && title.indexOf(q) === -1 && desc.indexOf(q) === -1 && creator.indexOf(q) === -1) return false;
+    // 标签匹配
+    if (tag !== 'all' && title.indexOf(tag.toLowerCase()) === -1 && desc.indexOf(tag.toLowerCase()) === -1) return false;
+    return true;
+  }
+  function applyFilter() {
+    cards.forEach(function(card) { card.style.display = shouldShowCard(card) ? '' : 'none'; });
+    showHideEmpty();
+  }
+  function showHideEmpty() {
+    var visible = 0;
+    cards.forEach(function(c) { if (c.style.display !== 'none') visible++; });
+    var empty = podcastGrid.querySelector('.empty-state');
+    if (empty) empty.style.display = visible > 0 ? 'none' : '';
+  }
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      searchClear.style.display = this.value.trim() ? 'flex' : 'none';
+      applyFilter();
+    });
+  }
+  if (searchClear) {
+    searchClear.addEventListener('click', function() {
+      searchInput.value = '';
+      searchInput.dispatchEvent(new Event('input'));
+      searchInput.focus();
+    });
+  }
+
+  // 标签筛选
+  var tagBar = document.getElementById('tagBar');
+  if (tagBar) {
+    tagBar.addEventListener('click', function(e) {
+      var btn = e.target.closest('.tag-btn');
+      if (!btn) return;
+      tagBar.querySelectorAll('.tag-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      activeTag = btn.getAttribute('data-tag');
+      applyFilter();
+    });
+  }
+
+  // 收藏功能（localStorage）
+  var FAV_KEY = 'xiaowei_favs';
+  function getFavs() {
+    try { return JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch(e) { return []; }
+  }
+  function setFavs(list) { localStorage.setItem(FAV_KEY, JSON.stringify(list)); }
+  function toggleFav(uuid, title) {
+    var favs = getFavs();
+    var idx = favs.findIndex(function(f) { return f.uuid === uuid; });
+    if (idx > -1) {
+      favs.splice(idx, 1);
+    } else {
+      favs.unshift({ uuid: uuid, title: title, at: Date.now() });
+    }
+    setFavs(favs);
+    updateFavIcons();
+    renderFavSection();
+  }
+  // 委托事件处理收藏按钮
+  podcastGrid.addEventListener('click', function(e) {
+    var favBtn = e.target.closest('.card-fav');
+    if (!favBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleFav(favBtn.getAttribute('data-uuid'), favBtn.getAttribute('data-title'));
+  });
+  function updateFavIcons() {
+    var favs = getFavs();
+    var uuids = favs.map(function(f) { return f.uuid; });
+    document.querySelectorAll('.card-fav').forEach(function(btn) {
+      btn.textContent = uuids.includes(btn.getAttribute('data-uuid')) ? '❤️' : '🤍';
+    });
+  }
+  function renderFavSection() {
+    var favs = getFavs();
+    var favSection = document.getElementById('favSection');
+    var favGrid = document.getElementById('favGrid');
+    if (!favSection || !favGrid) return;
+    if (favs.length === 0) { favSection.style.display = 'none'; return; }
+    // 从当前页面卡片中克隆收藏的节目
+    var cardMap = {};
+    cards.forEach(function(c) { cardMap[c.getAttribute('href')] = c; });
+    favGrid.innerHTML = '';
+    favs.forEach(function(f) {
+      var key = '/play/' + f.uuid;
+      var orig = cardMap[key];
+      if (orig) {
+        var clone = orig.cloneNode(true);
+        clone.style.display = '';
+        // 更新收藏图标
+        var fb = clone.querySelector('.card-fav');
+        if (fb) fb.textContent = '❤️';
+        favGrid.appendChild(clone);
+      } else {
+        var div = document.createElement('div');
+        div.className = 'podcast-card';
+        div.style.cssText = 'display:flex;align-items:center;justify-content:center;padding:20px;';
+        div.innerHTML = '<a href="/play/' + f.uuid + '" style="color:var(--accent)">' + (f.title || '未知节目') + '</a>';
+        favGrid.appendChild(div);
+      }
+    });
+  }
+  updateFavIcons();
+
+  // 公告滚动
+  var track = document.getElementById('announcementTrack');
+  if (track && track.scrollWidth > track.parentElement.clientWidth) {
+    var clone = track.innerHTML;
+    track.innerHTML = clone + clone;
+    var speed = 0.8;
+    var pos = 0;
+    function scroll() {
+      pos -= speed;
+      if (Math.abs(pos) >= track.scrollWidth / 2) pos = 0;
+      track.style.transform = 'translateX(' + pos + 'px)';
+      requestAnimationFrame(scroll);
+    }
+    scroll();
+  }
+})();
+</script>

@@ -14,6 +14,12 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+  <!-- APP 环境检测：WebView 自定义 UserAgent 标记 -->
+  <script>
+  if (/XiaoWeiPodcast/i.test(navigator.userAgent)) {
+    document.body.classList.add('is-app');
+  }
+  </script>
   <nav class="navbar">
     <div class="container">
       <a href="/" class="logo">🎙️ 小伟播客</a>
