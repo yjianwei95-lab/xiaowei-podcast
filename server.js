@@ -811,6 +811,165 @@ app.get('/api/me', async (req, res) => {
   }
 });
 
+// ===================================================================
+// 原生 APP JSON API
+// ===================================================================
+
+// 播客列表（支持搜索、标签、排序）
+app.get('/api/podcasts', async (req, res) => {
+  try {
+    const search = (req.query.search || '').trim();
+    const tag = (req.query.tag || '').trim();
+    const sort = req.query.sort || 'recent'; // recent | hot
+
+    let query = supabase.from('episodes').select('*').eq('status', 1);
+
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+    }
+
+    const { data: podcasts, error } = await query;
+    if (error) throw error;
+
+    let result = (podcasts || []).map(p => ({
+      id: p.id,
+      uuid: p.uuid,
+      title: p.title,
+      description: p.description || '',
+      filename: p.filename,
+      original_name: p.original_name,
+      file_size: p.file_size,
+      duration: p.duration || '',
+      uploader_name: p.uploader_name,
+      play_count: p.play_count || 0,
+      created_at: p.created_at,
+      audio_url: `${SUPABASE_URL}/storage/v1/object/public/audio/${p.filename}`,
+      cover_url: null // 后续可扩展封面
+    }));
+
+    // 标签过滤
+    if (tag) {
+      result = result.filter(p => (p.title || '').includes(tag) || (p.description || '').includes(tag));
+    }
+
+    // 排序
+    if (sort === 'hot') {
+      result.sort((a, b) => (b.play_count || 0) - (a.play_count || 0));
+    } else {
+      result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+
+    res.json({ success: true, podcasts: result, total: result.length });
+  } catch (e) {
+    console.error('API播客列表错误:', e.message);
+    res.json({ success: false, message: e.message, podcasts: [] });
+  }
+});
+
+// 热门排行
+app.get('/api/podcasts/hot', async (req, res) => {
+  try {
+    const { data: podcasts, error } = await supabase
+      .from('episodes').select('*').eq('status', 1);
+    if (error) throw error;
+    const hot = (podcasts || [])
+      .sort((a, b) => (b.play_count || 0) - (a.play_count || 0))
+      .slice(0, 5)
+      .map(p => ({
+        uuid: p.uuid, title: p.title, uploader_name: p.uploader_name,
+        play_count: p.play_count || 0, created_at: p.created_at
+      }));
+    res.json({ success: true, hot });
+  } catch (e) {
+    res.json({ success: false, message: e.message, hot: [] });
+  }
+});
+
+// 最近更新
+app.get('/api/podcasts/recent', async (req, res) => {
+  try {
+    const { data: podcasts, error } = await supabase
+      .from('episodes').select('*').eq('status', 1)
+      .order('created_at', { ascending: false }).limit(5);
+    if (error) throw error;
+    const recent = (podcasts || []).map(p => ({
+      uuid: p.uuid, title: p.title, uploader_name: p.uploader_name, created_at: p.created_at
+    }));
+    res.json({ success: true, recent });
+  } catch (e) {
+    res.json({ success: false, message: e.message, recent: [] });
+  }
+});
+
+// 单条播客详情
+app.get('/api/podcasts/:uuid', async (req, res) => {
+  try {
+    const { data: podcast, error } = await supabase
+      .from('episodes').select('*').eq('uuid', req.params.uuid).eq('status', 1).single();
+    if (error || !podcast) return res.json({ success: false, message: '未找到' });
+
+    // 增加播放计数
+    await supabase.from('episodes').update({ play_count: (podcast.play_count || 0) + 1 }).eq('uuid', req.params.uuid);
+
+    res.json({
+      success: true,
+      podcast: {
+        id: podcast.id, uuid: podcast.uuid,
+        title: podcast.title, description: podcast.description || '',
+        filename: podcast.filename, original_name: podcast.original_name,
+        file_size: podcast.file_size, duration: podcast.duration || '',
+        uploader_name: podcast.uploader_name, play_count: (podcast.play_count || 0) + 1,
+        created_at: podcast.created_at,
+        audio_url: `${SUPABASE_URL}/storage/v1/object/public/audio/${podcast.filename}`
+      }
+    });
+  } catch (e) {
+    res.json({ success: false, message: e.message });
+  }
+});
+
+// 标签列表
+app.get('/api/tags', (req, res) => {
+  res.json({ success: true, tags: TAG_KEYWORDS });
+});
+
+// 热门创作者
+app.get('/api/creators', async (req, res) => {
+  try {
+    const { data: podcasts, error } = await supabase.from('episodes').select('uploader_name').eq('status', 1);
+    if (error) throw error;
+    const count = {};
+    (podcasts || []).forEach(p => { count[p.uploader_name] = (count[p.uploader_name] || 0) + 1; });
+    const creators = Object.entries(count)
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, cnt]) => ({ name, count: cnt }));
+    res.json({ success: true, creators });
+  } catch (e) {
+    res.json({ success: false, message: e.message, creators: [] });
+  }
+});
+
+// 公告
+app.get('/api/announcements', (req, res) => {
+  res.json({ success: true, announcements: ANNOUNCEMENTS });
+});
+
+// 站点统计
+app.get('/api/stats', async (req, res) => {
+  try {
+    const stats = await getStats();
+    res.json({ success: true, stats });
+  } catch (e) {
+    res.json({ success: false, message: e.message, stats: {} });
+  }
+});
+
+// 登出 API
+app.post('/api/logout', (req, res) => {
+  req.session.destroy();
+  res.json({ success: true });
+});
+
 // 注册页面
 app.get('/register', (req, res) => {
   if (req.session.userId) return res.redirect('/');
