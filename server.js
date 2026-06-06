@@ -249,15 +249,31 @@ app.use((req, res, next) => {
   next();
 });
 
-// Session 中间件（使用 PostgreSQL 持久化，避免多实例问题）
-const pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Session 中间件
+let sessionStore = null;
+if (process.env.DATABASE_URL) {
+  try {
+    const pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    sessionStore = new PgSession({ pool: pgPool, tableName: 'session', createTableIfMissing: true });
+    console.log('[Session] 使用 PostgreSQL 持久化存储');
+  } catch (e) {
+    console.error('[Session] PostgreSQL 连接失败，回退到内存存储:', e.message);
+  }
+} else {
+  console.log('[Session] DATABASE_URL 未设置，使用内存存储（生产环境建议配置 PostgreSQL）');
+}
 
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
 app.use(session({
-  store: new PgSession({ pool: pgPool, tableName: 'session' }),
+  store: sessionStore,
   secret: process.env.SESSION_SECRET || 'xiaowei-podcast-fixed-secret-2026',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000, sameSite: 'none', secure: true }
+  cookie: {
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: isProduction ? 'none' : 'lax',
+    secure: isProduction
+  }
 }));
 
 app.set('view engine', 'ejs');
@@ -534,8 +550,11 @@ app.post('/phone-login', async (req, res) => {
     req.session.nickname = user.nickname || user.username;
     req.session.phone = user.phone || '';
 
-    if (isApi) return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname } });
-    return res.redirect('/');
+    req.session.save(function(err) {
+      if (err) console.error('[Session Save Error]', err);
+      if (isApi) return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname } });
+      return res.redirect('/');
+    });
   } catch (e) {
     if (isApi) return res.json({ success: false, message: '登录失败' });
     return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '登录失败' }, phone });
@@ -580,8 +599,11 @@ app.post('/login', async (req, res) => {
     req.session.nickname = user.nickname || user.username;
     req.session.phone = user.phone || '';
 
-    if (isApi) return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname } });
-    return res.redirect('/');
+    req.session.save(function(err) {
+      if (err) console.error('[Session Save Error]', err);
+      if (isApi) return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname } });
+      return res.redirect('/');
+    });
   } catch (e) {
     if (isApi) return res.json({ success: false, message: '登录失败' });
     return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '登录失败' } });
@@ -652,8 +674,11 @@ app.post('/register', async (req, res) => {
     req.session.nickname = newUser.nickname;
     req.session.phone = newUser.phone || '';
 
-    if (isApi) return res.json({ success: true, user: { id: newUser.id, username: newUser.username, nickname: newUser.nickname } });
-    return res.redirect('/');
+    req.session.save(function(err) {
+      if (err) console.error('[Session Save Error]', err);
+      if (isApi) return res.json({ success: true, user: { id: newUser.id, username: newUser.username, nickname: newUser.nickname } });
+      return res.redirect('/');
+    });
   } catch (e) {
     console.error('注册错误:', e.message);
     if (isApi) return res.json({ success: false, message: '注册失败: ' + e.message });
