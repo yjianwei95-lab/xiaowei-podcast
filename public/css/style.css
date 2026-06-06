@@ -1257,17 +1257,22 @@ a:focus-visible {
   .stats-bar { gap: 10px; font-size: 0.82rem; }
 }
 
-/* ─── APP 内嵌环境（原生底部导航接管） ──── */
+/* ─── APP 内嵌环境：隐藏所有 Web 端 UI，只留内容 ──── */
+body.is-app .navbar { display: none !important; }
 body.is-app .mobile-nav { display: none !important; }
-body.is-app .profile-overlay, 
+body.is-app .profile-overlay,
 body.is-app .profile-sheet { display: none !important; }
+body.is-app .footer { display: none !important; }
+body.is-app .announcement-bar { display: none !important; }
+/* 内容区上下留出原生导航栏的空间 */
 body.is-app main.container {
-  padding-bottom: 60px; /* 原生导航高度 */
+  padding-top: 48px;
+  padding-bottom: 80px;
+  max-width: 100%;
 }
-body.is-app .footer {
-  padding-bottom: 100px;
-}
-/* APP 内强制显示顶部导航（移动端原本隐藏了） */
 @media (max-width: 640px) {
-  body.is-app .navbar { display: flex !important; }
+  body.is-app main.container {
+    padding-top: 8px;
+    padding-bottom: 80px;
+  }
 }
