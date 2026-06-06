@@ -265,11 +265,20 @@ app.set('trust proxy', 1);
 
 // Session 中间件
 let sessionStore = null;
+let pgPool = null;
 if (process.env.DATABASE_URL) {
   try {
-    const pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
     sessionStore = new PgSession({ pool: pgPool, tableName: 'session', createTableIfMissing: true });
     console.log('[Session] 使用 PostgreSQL 持久化存储');
+    // 数据库迁移：添加 custom_tags 字段
+    pgPool.query(`
+      DO $$ BEGIN
+        ALTER TABLE episodes ADD COLUMN custom_tags TEXT[] DEFAULT '{}';
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$;
+    `).then(() => console.log('[Migration] custom_tags 字段已就绪'))
+      .catch(e => console.log('[Migration] 跳过（可能表尚未创建）:', e.message));
   } catch (e) {
     console.error('[Session] PostgreSQL 连接失败，回退到内存存储:', e.message);
   }
@@ -844,12 +853,17 @@ app.get('/api/podcasts', async (req, res) => {
       play_count: p.play_count || 0,
       created_at: p.created_at,
       audio_url: `${SUPABASE_URL}/storage/v1/object/public/audio/${p.filename}`,
-      cover_url: null // 后续可扩展封面
+      cover_url: null, // 后续可扩展封面
+      custom_tags: p.custom_tags || []  // 用户自定义标签
     }));
 
-    // 标签过滤
+    // 标签过滤（支持系统标签 + 自定义标签）
     if (tag) {
-      result = result.filter(p => (p.title || '').includes(tag) || (p.description || '').includes(tag));
+      result = result.filter(p =>
+        (p.title || '').includes(tag) ||
+        (p.description || '').includes(tag) ||
+        (p.custom_tags || []).some(t => t === tag)
+      );
     }
 
     // 排序
@@ -920,7 +934,8 @@ app.get('/api/podcasts/:uuid', async (req, res) => {
         file_size: podcast.file_size, duration: podcast.duration || '',
         uploader_name: podcast.uploader_name, play_count: (podcast.play_count || 0) + 1,
         created_at: podcast.created_at,
-        audio_url: `${SUPABASE_URL}/storage/v1/object/public/audio/${podcast.filename}`
+        audio_url: `${SUPABASE_URL}/storage/v1/object/public/audio/${podcast.filename}`,
+        custom_tags: podcast.custom_tags || []
       }
     });
   } catch (e) {
@@ -928,9 +943,39 @@ app.get('/api/podcasts/:uuid', async (req, res) => {
   }
 });
 
-// 标签列表
-app.get('/api/tags', (req, res) => {
-  res.json({ success: true, tags: TAG_KEYWORDS });
+// 标签列表（系统标签 + 所有用户自定义标签）
+app.get('/api/tags', async (req, res) => {
+  try {
+    const { data: episodes } = await supabase.from('episodes').select('custom_tags').eq('status', 1);
+    const customTags = [...new Set((episodes || []).flatMap(e => e.custom_tags || []))];
+    const allTags = [...new Set([...TAG_KEYWORDS, ...customTags])];
+    res.json({ success: true, tags: allTags, system_tags: TAG_KEYWORDS, custom_tags: customTags });
+  } catch (e) {
+    res.json({ success: true, tags: TAG_KEYWORDS, system_tags: TAG_KEYWORDS, custom_tags: [] });
+  }
+});
+
+// 自定义标签更新（需要登录）
+app.put('/api/podcasts/:uuid/tags', async (req, res) => {
+  if (!req.session.userId) return res.json({ success: false, message: '请先登录' });
+  try {
+    const { tags } = req.body;
+    if (!Array.isArray(tags)) return res.json({ success: false, message: 'tags 必须是数组' });
+
+    // 过滤空值和重复
+    const cleanTags = [...new Set(tags.map(t => String(t).trim()).filter(t => t.length > 0))];
+
+    const { error } = await supabase
+      .from('episodes')
+      .update({ custom_tags: cleanTags })
+      .eq('uuid', req.params.uuid);
+
+    if (error) throw error;
+    res.json({ success: true, custom_tags: cleanTags });
+  } catch (e) {
+    console.error('更新标签失败:', e.message);
+    res.json({ success: false, message: e.message });
+  }
 });
 
 // 热门创作者
