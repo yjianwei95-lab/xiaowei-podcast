@@ -496,10 +496,20 @@ app.get('/phone-login', (req, res) => {
 app.post('/phone-login', async (req, res) => {
   const phone = (req.body.phone || '').trim().replace(/\s/g, '');
   const { password } = req.body;
+  const isApi = req.headers['content-type']?.includes('application/json') || req.headers['accept']?.includes('application/json');
 
-  if (!phone) return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入手机号' } });
-  if (!/^1[3-9]\d{9}$/.test(phone)) return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入正确的11位手机号' }, phone });
-  if (!password) return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入密码' }, phone });
+  if (!phone) {
+    if (isApi) return res.json({ success: false, message: '请输入手机号' });
+    return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入手机号' } });
+  }
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    if (isApi) return res.json({ success: false, message: '请输入正确的11位手机号' });
+    return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入正确的11位手机号' }, phone });
+  }
+  if (!password) {
+    if (isApi) return res.json({ success: false, message: '请输入密码' });
+    return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入密码' }, phone });
+  }
 
   try {
     const { data: user, error } = await supabase
@@ -508,17 +518,26 @@ app.post('/phone-login', async (req, res) => {
       .eq('phone', phone)
       .single();
 
-    if (error || !user) return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '该手机号未注册，请先注册' }, phone });
+    if (error || !user) {
+      if (isApi) return res.json({ success: false, message: '该手机号未注册，请先注册' });
+      return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '该手机号未注册，请先注册' }, phone });
+    }
 
     let passwordValid = bcrypt.compareSync(password, user.password_hash);
-    if (!passwordValid) return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '密码错误' }, phone });
+    if (!passwordValid) {
+      if (isApi) return res.json({ success: false, message: '密码错误' });
+      return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '密码错误' }, phone });
+    }
 
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.nickname = user.nickname || user.username;
     req.session.phone = user.phone || '';
+
+    if (isApi) return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname } });
     return res.redirect('/');
   } catch (e) {
+    if (isApi) return res.json({ success: false, message: '登录失败' });
     return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '登录失败' }, phone });
   }
 });
@@ -531,7 +550,12 @@ app.get('/login', (req, res) => {
 
 app.post('/login', async (req, res) => {
   const identifier = (req.body.username || '').trim();
-  if (!identifier) return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '请输入手机号或用户名' } });
+  const isApi = req.headers['content-type']?.includes('application/json') || req.headers['accept']?.includes('application/json');
+
+  if (!identifier) {
+    if (isApi) return res.json({ success: false, message: '请输入手机号或用户名' });
+    return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '请输入手机号或用户名' } });
+  }
 
   try {
     const { data: user, error } = await supabase
@@ -540,17 +564,26 @@ app.post('/login', async (req, res) => {
       .or(`username.eq.${identifier},phone.eq.${identifier}`)
       .single();
 
-    if (error || !user) return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '账号不存在' } });
+    if (error || !user) {
+      if (isApi) return res.json({ success: false, message: '账号不存在' });
+      return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '账号不存在' } });
+    }
 
     let passwordValid = bcrypt.compareSync(req.body.password, user.password_hash);
-    if (!passwordValid) return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '密码错误' } });
+    if (!passwordValid) {
+      if (isApi) return res.json({ success: false, message: '密码错误' });
+      return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '密码错误' } });
+    }
 
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.nickname = user.nickname || user.username;
     req.session.phone = user.phone || '';
+
+    if (isApi) return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname } });
     return res.redirect('/');
   } catch (e) {
+    if (isApi) return res.json({ success: false, message: '登录失败' });
     return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '登录失败' } });
   }
 });
@@ -562,21 +595,40 @@ app.post('/register', async (req, res) => {
   const { username, phone, password, nickname } = req.body;
   const usernameTrim = (username || '').trim();
   const phoneTrim = (phone || '').trim();
+  const isApi = req.headers['content-type']?.includes('application/json') || req.headers['accept']?.includes('application/json');
 
-  if (!usernameTrim && !phoneTrim) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请填写手机号或用户名' } });
-  if (phoneTrim && !/^1[3-9]\d{9}$/.test(phoneTrim)) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请输入正确的11位手机号' } });
-  if (usernameTrim && usernameTrim.length < 2) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '用户名至少2个字符' } });
-  if (!password || password.length < 4) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '密码至少4位' } });
+  if (!usernameTrim && !phoneTrim) {
+    if (isApi) return res.json({ success: false, message: '请填写手机号或用户名' });
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请填写手机号或用户名' } });
+  }
+  if (phoneTrim && !/^1[3-9]\d{9}$/.test(phoneTrim)) {
+    if (isApi) return res.json({ success: false, message: '请输入正确的11位手机号' });
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请输入正确的11位手机号' } });
+  }
+  if (usernameTrim && usernameTrim.length < 2) {
+    if (isApi) return res.json({ success: false, message: '用户名至少2个字符' });
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '用户名至少2个字符' } });
+  }
+  if (!password || password.length < 4) {
+    if (isApi) return res.json({ success: false, message: '密码至少4位' });
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '密码至少4位' } });
+  }
 
   try {
     // 检查是否已注册
     if (phoneTrim) {
       const { data: existingPhone } = await supabase.from('users').select('id').eq('phone', phoneTrim).maybeSingle();
-      if (existingPhone) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该手机号已被注册' } });
+      if (existingPhone) {
+        if (isApi) return res.json({ success: false, message: '该手机号已被注册' });
+        return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该手机号已被注册' } });
+      }
     }
     if (usernameTrim) {
       const { data: existingUser } = await supabase.from('users').select('id').eq('username', usernameTrim).maybeSingle();
-      if (existingUser) return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该用户名已被注册' } });
+      if (existingUser) {
+        if (isApi) return res.json({ success: false, message: '该用户名已被注册' });
+        return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该用户名已被注册' } });
+      }
     }
 
     const finalUsername = usernameTrim || ('用户' + phoneTrim.slice(-4));
@@ -599,9 +651,12 @@ app.post('/register', async (req, res) => {
     req.session.username = newUser.username;
     req.session.nickname = newUser.nickname;
     req.session.phone = newUser.phone || '';
+
+    if (isApi) return res.json({ success: true, user: { id: newUser.id, username: newUser.username, nickname: newUser.nickname } });
     return res.redirect('/');
   } catch (e) {
     console.error('注册错误:', e.message);
+    if (isApi) return res.json({ success: false, message: '注册失败: ' + e.message });
     return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '注册失败: ' + e.message } });
   }
 });
