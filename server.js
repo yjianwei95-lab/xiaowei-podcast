@@ -249,6 +249,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// 信任反向代理（Railway 等平台使用 HTTPS 代理 → HTTP 应用）
+// 必须设置在 session 之前，否则 secure cookie 不会被设置
+app.set('trust proxy', 1);
+
 // Session 中间件
 let sessionStore = null;
 if (process.env.DATABASE_URL) {
@@ -264,6 +268,7 @@ if (process.env.DATABASE_URL) {
 }
 
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
+console.log(`[Session] isProduction=${isProduction}, trust proxy 已启用`);
 app.use(session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || 'xiaowei-podcast-fixed-secret-2026',
