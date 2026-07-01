@@ -1387,7 +1387,24 @@ app.post('/api/free-tts', async (req, res) => {
     }
 
     if (!audioBuffer) {
-      return res.status(500).json({ success: false, error: '合成失败：Edge TTS 服务未返回有效音频，请稍后重试或检查网络连接' });
+      // Edge TTS 失败，尝试 Google TTS 兜底（仅限短文本）
+      if (text.length <= 200) {
+        try {
+          console.log(`[TTS] EdgeTTS 失败，尝试 Google TTS 兜底...`);
+          const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-CN&client=tw-ob`;
+          const resp = await fetch(url);
+          if (resp.ok) {
+            audioBuffer = Buffer.from(await resp.arrayBuffer());
+            console.log(`[TTS] Google TTS 成功: size=${audioBuffer.length}`);
+          }
+        } catch(e) {
+          console.log(`[TTS] Google TTS 也失败: ${e.message}`);
+        }
+      }
+    }
+
+    if (!audioBuffer) {
+      return res.status(500).json({ success: false, error: '合成失败：当前服务器环境无法连接语音合成服务，请使用本地版本或稍后重试' });
     }
 
     res.set('Content-Type', 'audio/mpeg');
