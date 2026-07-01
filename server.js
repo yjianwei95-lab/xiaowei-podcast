@@ -1369,6 +1369,7 @@ app.post('/api/free-tts', async (req, res) => {
 
     // 先尝试无前缀合成，若失败则回退到带 '。' 前缀（防首字被吞）
     let audioBuffer;
+    let usedGoogle = false;
 
     for (const inputText of [text, '。' + text]) {
       try {
@@ -1387,7 +1388,7 @@ app.post('/api/free-tts', async (req, res) => {
     }
 
     if (!audioBuffer) {
-      // Edge TTS 失败，尝试 Google TTS 兜底（仅限短文本）
+      // Edge TTS 失败，尝试 Google TTS 兜底（仅限短文本，仅1种音色）
       if (text.length <= 200) {
         try {
           console.log(`[TTS] EdgeTTS 失败，尝试 Google TTS 兜底...`);
@@ -1395,6 +1396,7 @@ app.post('/api/free-tts', async (req, res) => {
           const resp = await fetch(url);
           if (resp.ok) {
             audioBuffer = Buffer.from(await resp.arrayBuffer());
+            usedGoogle = true;
             console.log(`[TTS] Google TTS 成功: size=${audioBuffer.length}`);
           }
         } catch(e) {
@@ -1404,12 +1406,13 @@ app.post('/api/free-tts', async (req, res) => {
     }
 
     if (!audioBuffer) {
-      return res.status(500).json({ success: false, error: '合成失败：当前服务器环境无法连接语音合成服务，请使用本地版本或稍后重试' });
+      return res.status(500).json({ success: false, error: '当前服务器环境不支持中文语音合成，请使用本地版本 localhost:3000 体验全部音色' });
     }
 
     res.set('Content-Type', 'audio/mpeg');
     res.set('X-Voice-Name', encodeURIComponent(v.name));
     res.set('X-Text-Snippet', encodeURIComponent(text.slice(0, 50)));
+    if (usedGoogle) res.set('X-TTS-Engine', 'google');
     res.send(audioBuffer);
   } catch (err) {
     console.error('TTS失败:', err.message);

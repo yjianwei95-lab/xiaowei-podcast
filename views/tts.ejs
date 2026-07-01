@@ -139,6 +139,7 @@
           <div class="voice-row">
             <select id="voiceSelect"></select>
             <button class="btn-preview" onclick="ttsPreviewVoice()" title="试听">▶</button>
+            <span class="voice-badge" id="ttsEngineBadge" style="font-size:10px;color:#9CA3AF;display:none">🌐 基础音质</span>
           </div>
         </div>
         <div class="control-group">
@@ -517,6 +518,17 @@ async function ttsDoTTS(text, voice) {
   });
   if (!res.ok) throw new Error('合成失败');
   var blob = await res.blob();
+
+  // 检测TTS引擎
+  var engine = res.headers.get('X-TTS-Engine') || 'edge';
+  var badge = document.getElementById('ttsEngineBadge');
+  if (badge) {
+    if (engine === 'google') {
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
 
   // 裁剪开头静音
   try { blob = await ttsTrimSilence(blob); } catch(e) { console.warn('静音裁剪失败:', e); }
