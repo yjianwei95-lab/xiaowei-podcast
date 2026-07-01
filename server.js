@@ -1330,8 +1330,6 @@ app.post('/xiaowei-podcast-admin/comments/delete/:id', requireAdmin, async (req,
 const TTS_VOICE_MAP = {
   'tongtong':   { name: '晓晓 · 温柔女声',    edge: 'zh-CN-XiaoxiaoNeural' },
   'chuichui':   { name: '晓伊 · 活泼女声',    edge: 'zh-CN-XiaoyiNeural' },
-  'xiaobei':    { name: '晓北 · 辽宁女声',    edge: 'zh-CN-liaoning-XiaobeiNeural' },
-  'xiaoni':     { name: '晓妮 · 陕西女声',    edge: 'zh-CN-shaanxi-XiaoniNeural' },
   'xiaochen':   { name: '云希 · 青年男声',    edge: 'zh-CN-YunxiNeural' },
   'jam':        { name: '云健 · 磁性男声',    edge: 'zh-CN-YunjianNeural' },
   'yunyang':    { name: '云扬 · 阳光男声',    edge: 'zh-CN-YunyangNeural' },

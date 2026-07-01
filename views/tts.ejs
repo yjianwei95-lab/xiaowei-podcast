@@ -304,12 +304,10 @@ function ttsInit() {
 // 异步获取音色列表（可能从API或硬编码）
 // 先从 localStorage 加载，同时异步拉取
 (function() {
-  // 硬编码保底音色（仅保留Edge TTS实际可用的中文音色）
+  // 硬编码保底音色（仅保留Edge TTS实际可用的标准音色）
   TTS.voices = [
     { id: 'tongtong', name: '晓晓 · 温柔女声' },
     { id: 'chuichui', name: '晓伊 · 活泼女声' },
-    { id: 'xiaobei',  name: '晓北 · 辽宁女声' },
-    { id: 'xiaoni',   name: '晓妮 · 陕西女声' },
     { id: 'xiaochen', name: '云希 · 青年男声' },
     { id: 'jam',      name: '云健 · 磁性男声' },
     { id: 'yunyang',  name: '云扬 · 阳光男声' },
