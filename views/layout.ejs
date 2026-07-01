@@ -12,6 +12,38 @@
   <link rel="manifest" href="/manifest.json">
   <title><%= typeof title !== 'undefined' ? (title ? title + ' - ' : '') : '' %>小伟播客</title>
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+  /* 欢迎横幅全局样式 */
+  .site-banner-wrap {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    height: 44px;
+    background: linear-gradient(90deg, #EEF2FF, #E0E7FF, #C7D2FE);
+    border-radius: 10px;
+    margin-bottom: 16px;
+    transition: opacity 0.5s ease, height 0.5s ease, margin 0.5s ease;
+  }
+  .site-banner-wrap.hidden {
+    opacity: 0;
+    height: 0;
+    margin-bottom: 0;
+    pointer-events: none;
+  }
+  .site-banner-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 44px;
+    line-height: 44px;
+    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 500;
+    color: #3730A3;
+    padding: 0 4px;
+  }
+  .site-banner-inner::before { content: "✨ "; }
+  </style>
 </head>
 <body>
   <!-- APP 环境检测：WebView 自定义 UserAgent 标记 -->
@@ -68,6 +100,9 @@
     <% if (typeof flash !== 'undefined' && flash) { %>
       <div class="flash <%= flash.category %>"><%= flash.message %></div>
     <% } %>
+    <div class="site-banner-wrap" id="siteBanner">
+      <div class="site-banner-inner" id="siteBannerInner">语音配音工作台全新上线 🎉 支持12种音色 · 语调/语速/音量自由调节 · 智能分句批量生成 · 场景模板一键切换 · 生成历史自动保存</div>
+    </div>
     <%- content %>
   </main>
   <footer class="footer">
@@ -287,6 +322,50 @@
     // 初始化主题按钮选中状态
     var savedTheme = localStorage.getItem('xiaowei-theme') || 'auto';
     updateProfileThemeActive(savedTheme);
+  })();
+  </script>
+
+  <!-- 欢迎横幅动画 -->
+  <script>
+  (function() {
+    var banner = document.getElementById('siteBanner');
+    var inner = document.getElementById('siteBannerInner');
+    if (!banner || !inner) return;
+
+    var containerW = banner.offsetWidth;
+    var textW = inner.scrollWidth;
+    var gap = 40;
+    var distance = containerW + textW + gap * 2;
+
+    inner.style.transform = 'translateX(' + (containerW + gap) + 'px)';
+
+    var passes = 0;
+    var startTime = null;
+    var durationPerPass = Math.max(6000, distance * 5);
+
+    function frame(timestamp) {
+      if (!startTime) startTime = timestamp;
+      var elapsed = timestamp - startTime;
+      var progress = elapsed / durationPerPass;
+
+      if (progress >= 1) {
+        passes++;
+        if (passes >= 2) {
+          banner.classList.add('hidden');
+          return;
+        }
+        startTime = timestamp;
+        inner.style.transform = 'translateX(' + (containerW + gap) + 'px)';
+        requestAnimationFrame(frame);
+        return;
+      }
+
+      var x = (containerW + gap) - (distance * progress);
+      inner.style.transform = 'translateX(' + x + 'px)';
+      requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
   })();
   </script>
 
