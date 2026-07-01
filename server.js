@@ -1328,18 +1328,14 @@ app.post('/xiaowei-podcast-admin/comments/delete/:id', requireAdmin, async (req,
 // ===================================================================
 
 const TTS_VOICE_MAP = {
-  'tongtong':   { name: '晓晓 · 温暖女声',   edge: 'zh-CN-XiaoxiaoNeural' },
-  'xiaochen':   { name: '云希 · 青年男声',   edge: 'zh-CN-YunxiNeural' },
-  'chuichui':   { name: '晓伊 · 活泼女声',   edge: 'zh-CN-XiaoyiNeural' },
-  'jam':        { name: '云健 · 磁性男声',   edge: 'zh-CN-YunjianNeural' },
-  'kazi':       { name: '云泽 · 专业播音',   edge: 'zh-CN-YunzeNeural' },
-  'douji':      { name: '晓梦 · 可爱萌音',   edge: 'zh-CN-XiaomengNeural' },
-  'luodo':      { name: '晓寒 · 温柔女声',   edge: 'zh-CN-XiaohanNeural' },
-  'yunyang':    { name: '云扬 · 阳光男声',   edge: 'zh-CN-YunyangNeural' },
-  'xiaoqiu':    { name: '晓秋 · 知性女声',   edge: 'zh-CN-XiaoqiuNeural' },
-  'xiaorui':    { name: '晓睿 · 温婉女声',   edge: 'zh-CN-XiaoruiNeural' },
-  'yunxia':     { name: '云夏 · 沉稳男声',   edge: 'zh-CN-YunxiaNeural' },
-  'yunye':      { name: '云野 · 磁性男声',   edge: 'zh-CN-YunyeNeural' },
+  'tongtong':   { name: '晓晓 · 温柔女声',    edge: 'zh-CN-XiaoxiaoNeural' },
+  'chuichui':   { name: '晓伊 · 活泼女声',    edge: 'zh-CN-XiaoyiNeural' },
+  'xiaobei':    { name: '晓北 · 辽宁女声',    edge: 'zh-CN-liaoning-XiaobeiNeural' },
+  'xiaoni':     { name: '晓妮 · 陕西女声',    edge: 'zh-CN-shaanxi-XiaoniNeural' },
+  'xiaochen':   { name: '云希 · 青年男声',    edge: 'zh-CN-YunxiNeural' },
+  'jam':        { name: '云健 · 磁性男声',    edge: 'zh-CN-YunjianNeural' },
+  'yunyang':    { name: '云扬 · 阳光男声',    edge: 'zh-CN-YunyangNeural' },
+  'yunxia':     { name: '云夏 · 沉稳男声',    edge: 'zh-CN-YunxiaNeural' },
 };
 
 // 配音页面

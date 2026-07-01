@@ -304,20 +304,16 @@ function ttsInit() {
 // 异步获取音色列表（可能从API或硬编码）
 // 先从 localStorage 加载，同时异步拉取
 (function() {
-  // 硬编码保底音色
+  // 硬编码保底音色（仅保留Edge TTS实际可用的中文音色）
   TTS.voices = [
-    { id: 'tongtong', name: '晓晓 · 温暖女声' },
-    { id: 'xiaochen', name: '云希 · 青年男声' },
+    { id: 'tongtong', name: '晓晓 · 温柔女声' },
     { id: 'chuichui', name: '晓伊 · 活泼女声' },
-    { id: 'jam',     name: '云健 · 磁性男声' },
-    { id: 'kazi',    name: '云泽 · 专业播音' },
-    { id: 'douji',   name: '晓梦 · 可爱萌音' },
-    { id: 'luodo',   name: '晓寒 · 温柔女声' },
-    { id: 'yunyang', name: '云扬 · 阳光男声' },
-    { id: 'xiaoqiu', name: '晓秋 · 知性女声' },
-    { id: 'xiaorui', name: '晓睿 · 温婉女声' },
-    { id: 'yunxia',  name: '云夏 · 沉稳男声' },
-    { id: 'yunye',   name: '云野 · 磁性男声' },
+    { id: 'xiaobei',  name: '晓北 · 辽宁女声' },
+    { id: 'xiaoni',   name: '晓妮 · 陕西女声' },
+    { id: 'xiaochen', name: '云希 · 青年男声' },
+    { id: 'jam',      name: '云健 · 磁性男声' },
+    { id: 'yunyang',  name: '云扬 · 阳光男声' },
+    { id: 'yunxia',   name: '云夏 · 沉稳男声' },
   ];
 })();
 
