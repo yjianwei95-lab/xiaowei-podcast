@@ -98,6 +98,39 @@
 .tts-workspace .toast.error { background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; }
 .tts-workspace .toast.info { background: #EEF2FF; color: #3730A3; border: 1px solid #C7D2FE; }
 
+/* ========== 欢迎横幅 ========== */
+.tts-banner-wrap {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  height: 44px;
+  background: linear-gradient(90deg, #EEF2FF, #E0E7FF, #C7D2FE);
+  border-radius: 10px;
+  margin-bottom: 6px;
+  transition: opacity 0.5s ease, height 0.5s ease, margin 0.5s ease;
+}
+.tts-banner-wrap.hidden {
+  opacity: 0;
+  height: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+.tts-banner-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 44px;
+  line-height: 44px;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  color: #3730A3;
+  padding: 0 4px;
+}
+.tts-banner-inner::before {
+  content: "✨ ";
+}
+
 @media (max-width: 800px) {
   .tts-workspace .main { grid-template-columns: 1fr; }
   .tts-workspace .col-right { order: 99; }
@@ -106,6 +139,10 @@
   .tts-workspace .slider-row input[type="range"] { width: 80px; }
 }
 </style>
+
+<div class="tts-banner-wrap" id="ttsBanner">
+  <div class="tts-banner-inner" id="ttsBannerInner">语音配音工作台全新上线 🎉 支持12种音色 · 语调/语速/音量自由调节 · 智能分句批量生成 · 场景模板一键切换 · 生成历史自动保存</div>
+</div>
 
 <div class="main">
   <!-- ========== 左栏 ========== -->
@@ -293,6 +330,9 @@ function ttsInit() {
   ttsLoadHistory();
 
   ttsUpdateStats();
+
+  // 启动欢迎横幅
+  ttsStartBanner();
 
   // 快捷键
   document.addEventListener('keydown', function(e) {
@@ -772,6 +812,52 @@ function ttsLoadHistory() {
     TTS.history = JSON.parse(raw).map(function(h) { return { ...h, blob: null }; });
     ttsRenderHistory();
   } catch(e) { console.warn('读取历史失败:', e); }
+}
+
+// ==================== 欢迎横幅动画 ====================
+function ttsStartBanner() {
+  var banner = document.getElementById('ttsBanner');
+  var inner = document.getElementById('ttsBannerInner');
+  if (!banner || !inner) return;
+
+  // 计算：文字从右端外滚动到左端外所需要的距离
+  var containerW = banner.offsetWidth;
+  var textW = inner.scrollWidth;
+  var gap = 40; // 前后留空
+  var distance = containerW + textW + gap * 2;
+
+  // 初始位置：文字在容器右边界外
+  inner.style.transform = 'translateX(' + (containerW + gap) + 'px)';
+
+  var passes = 0;
+  var startTime = null;
+  var durationPerPass = Math.max(6000, distance * 5); // 约5px/ms，最少6秒
+
+  function frame(timestamp) {
+    if (!startTime) startTime = timestamp;
+    var elapsed = timestamp - startTime;
+    var progress = elapsed / durationPerPass;
+
+    if (progress >= 1) {
+      passes++;
+      if (passes >= 2) {
+        // 两次滚动完成，淡出隐藏
+        banner.classList.add('hidden');
+        return;
+      }
+      // 重置到起点，开始下一次
+      startTime = timestamp;
+      inner.style.transform = 'translateX(' + (containerW + gap) + 'px)';
+      requestAnimationFrame(frame);
+      return;
+    }
+
+    var x = (containerW + gap) - (distance * progress);
+    inner.style.transform = 'translateX(' + x + 'px)';
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
 }
 
 // ==================== 工具函数 ====================
