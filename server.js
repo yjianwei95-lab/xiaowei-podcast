@@ -1364,13 +1364,31 @@ app.post('/api/free-tts', async (req, res) => {
     const rate = speed ? `+${Math.round((speed - 1) * 50)}%` : '+0%';
     const vol = volume != null ? `+${Math.round((volume - 5) * 5)}%` : '+0%';
     const pt = pitch != null ? `${pitch >= 0 ? '+' : ''}${pitch}Hz` : '+0Hz';
-    const paddedText = '。' + text;
 
     console.log(`[TTS] voice=${voice}(${v.name}), text="${text.slice(0,30)}..."`);
 
-    const tts = new EdgeTTS(paddedText, edgeVoice, { rate, volume: vol, pitch: pt });
-    const result = await tts.synthesize();
-    const audioBuffer = Buffer.from(await result.audio.arrayBuffer());
+    // 先尝试无前缀合成，若失败则回退到带 '。' 前缀（防首字被吞）
+    let audioBuffer;
+
+    for (const inputText of [text, '。' + text]) {
+      try {
+        const tts = new EdgeTTS(inputText, edgeVoice, { rate, volume: vol, pitch: pt });
+        const result = await tts.synthesize();
+        if (result && result.audio) {
+          const buf = Buffer.from(await result.audio.arrayBuffer());
+          if (buf && buf.length > 100) {
+            audioBuffer = buf;
+            break;
+          }
+        }
+      } catch (e) {
+        console.log(`[TTS] 重试: ${e.message}`);
+      }
+    }
+
+    if (!audioBuffer) {
+      return res.status(500).json({ success: false, error: '合成失败：Edge TTS 服务未返回有效音频，请稍后重试或检查网络连接' });
+    }
 
     res.set('Content-Type', 'audio/mpeg');
     res.set('X-Voice-Name', encodeURIComponent(v.name));
