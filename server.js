@@ -8,6 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 const ws = require('ws');
 const { Pool } = require('pg');
 const PgSession = require('connect-pg-simple')(session);
+const { EdgeTTS } = require('edge-tts-universal');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,11 +20,17 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
 // 优先使用 service_role key（后端需要写入权限），没有则用 anon key
 const supabaseKey = SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY;
-const supabase = createClient(SUPABASE_URL, supabaseKey, {
-  realtime: {
-    transport: ws
-  }
-});
+let supabase = null;
+try {
+  supabase = createClient(SUPABASE_URL, supabaseKey, {
+    realtime: {
+      transport: ws
+    }
+  });
+} catch(e) {
+  console.warn('⚠️ Supabase 初始化失败（环境变量 SUPABASE_URL 未配置？）:', e.message);
+  console.warn('  播客相关功能（首页/上传/播放）不可用，但 TTS 配音仍可正常使用');
+}
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -1317,12 +1324,72 @@ app.post('/xiaowei-podcast-admin/comments/delete/:id', requireAdmin, async (req,
 });
 
 // ===================================================================
+// TTS 语音配音（合并自语音工坊）
+// ===================================================================
+
+const TTS_VOICE_MAP = {
+  'tongtong':   { name: '晓晓 · 温暖女声',   edge: 'zh-CN-XiaoxiaoNeural' },
+  'xiaochen':   { name: '云希 · 青年男声',   edge: 'zh-CN-YunxiNeural' },
+  'chuichui':   { name: '晓伊 · 活泼女声',   edge: 'zh-CN-XiaoyiNeural' },
+  'jam':        { name: '云健 · 磁性男声',   edge: 'zh-CN-YunjianNeural' },
+  'kazi':       { name: '云泽 · 专业播音',   edge: 'zh-CN-YunzeNeural' },
+  'douji':      { name: '晓梦 · 可爱萌音',   edge: 'zh-CN-XiaomengNeural' },
+  'luodo':      { name: '晓寒 · 温柔女声',   edge: 'zh-CN-XiaohanNeural' },
+  'yunyang':    { name: '云扬 · 阳光男声',   edge: 'zh-CN-YunyangNeural' },
+  'xiaoqiu':    { name: '晓秋 · 知性女声',   edge: 'zh-CN-XiaoqiuNeural' },
+  'xiaorui':    { name: '晓睿 · 温婉女声',   edge: 'zh-CN-XiaoruiNeural' },
+  'yunxia':     { name: '云夏 · 沉稳男声',   edge: 'zh-CN-YunxiaNeural' },
+  'yunye':      { name: '云野 · 磁性男声',   edge: 'zh-CN-YunyeNeural' },
+};
+
+// 配音页面
+app.get('/tts', (req, res) => {
+  renderWithLayout(req, res, 'tts', { title: '语音配音' });
+});
+
+// 获取音色列表
+app.get('/api/tts-voices', (req, res) => {
+  const list = Object.entries(TTS_VOICE_MAP).map(([id, v]) => ({ id, name: v.name }));
+  res.json({ success: true, voices: list });
+});
+
+// Edge TTS 合成
+app.post('/api/free-tts', async (req, res) => {
+  try {
+    const { text, voice, speed, volume, pitch } = req.body;
+    if (!text) return res.status(400).json({ success: false, error: '缺少 text 参数' });
+
+    const v = TTS_VOICE_MAP[voice] || TTS_VOICE_MAP['tongtong'];
+    const edgeVoice = v.edge;
+    const rate = speed ? `+${Math.round((speed - 1) * 50)}%` : '+0%';
+    const vol = volume != null ? `+${Math.round((volume - 5) * 5)}%` : '+0%';
+    const pt = pitch != null ? `${pitch >= 0 ? '+' : ''}${pitch}Hz` : '+0Hz';
+    const paddedText = '。' + text;
+
+    console.log(`[TTS] voice=${voice}(${v.name}), text="${text.slice(0,30)}..."`);
+
+    const tts = new EdgeTTS(paddedText, edgeVoice, { rate, volume: vol, pitch: pt });
+    const result = await tts.synthesize();
+    const audioBuffer = Buffer.from(await result.audio.arrayBuffer());
+
+    res.set('Content-Type', 'audio/mpeg');
+    res.set('X-Voice-Name', encodeURIComponent(v.name));
+    res.set('X-Text-Snippet', encodeURIComponent(text.slice(0, 50)));
+    res.send(audioBuffer);
+  } catch (err) {
+    console.error('TTS失败:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ===================================================================
 // 启动
 // ===================================================================
 
 console.log('='.repeat(55));
 console.log('  🎙️ 小伟播客已启动！');
 console.log(`  🌐 前台地址: http://localhost:${PORT}`);
+console.log(`  🎤 语音配音: http://localhost:${PORT}/tts`);
 console.log(`  📤 上传页面: http://localhost:${PORT}/upload`);
 console.log(`  🔐 后台地址: http://localhost:${PORT}/xiaowei-podcast-admin/login`);
 console.log('  👤 默认账号: admin');

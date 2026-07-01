@@ -25,6 +25,7 @@
       <a href="/" class="logo">🎙️ 小伟播客</a>
       <div class="nav-links">
         <a href="/">首页</a>
+        <a href="/tts" style="color:#6366F1;font-weight:bold">🎤 语音配音</a>
         <a href="/upload">上传声音</a>
         <a href="/audio-editor" style="color:#FFD700;font-weight:bold">🎵 音频编辑</a>
         <% if (typeof session !== 'undefined' && session && (session.loggedIn || session.isAdmin || session.userId)) { %>
@@ -157,6 +158,10 @@
 
   <!-- ─── 移动端底部导航 ─── -->
   <nav class="mobile-nav" id="mobileNav">
+    <a href="/tts" class="mobile-nav-item" data-path="/tts">
+      <span class="mobile-nav-icon">🎤</span>
+      <span class="mobile-nav-label">配音</span>
+    </a>
     <a href="/" class="mobile-nav-item" data-path="/">
       <span class="mobile-nav-icon">🏠</span>
       <span class="mobile-nav-label">首页</span>
