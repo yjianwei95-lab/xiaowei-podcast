@@ -1415,6 +1415,83 @@ app.post('/api/free-tts', async (req, res) => {
 });
 
 // ===================================================================
+// SEO 路由
+// ===================================================================
+
+const BASE_URL = 'https://xiaowei-podcast-production.up.railway.app';
+
+// robots.txt
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(`User-agent: *
+Allow: /
+Disallow: /xiaowei-podcast-admin
+Disallow: /api/
+Sitemap: ${BASE_URL}/sitemap.xml
+`);
+});
+
+// sitemap.xml
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const urls = [
+      { loc: '/', priority: '1.0', changefreq: 'daily' },
+      { loc: '/tts', priority: '0.9', changefreq: 'weekly' },
+      { loc: '/upload', priority: '0.8', changefreq: 'weekly' },
+      { loc: '/audio-editor', priority: '0.8', changefreq: 'weekly' },
+    ];
+
+    // 动态获取所有播客节目页面
+    if (supabase) {
+      try {
+        const { data: episodes } = await supabase
+          .from('episodes')
+          .select('uuid, updated_at')
+          .eq('status', 'published')
+          .order('updated_at', { ascending: false })
+          .limit(5000);
+
+        if (episodes) {
+          episodes.forEach(ep => {
+            urls.push({
+              loc: `/play/${ep.uuid}`,
+              priority: '0.7',
+              changefreq: 'weekly',
+              lastmod: ep.updated_at
+            });
+          });
+        }
+      } catch (e) {
+        console.warn('[Sitemap] 获取播客列表失败:', e.message);
+      }
+    }
+
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n';
+    xml += '        xmlns:mobile="http://www.baidu.com/schemas/sitemap-mobile/1/">\n';
+
+    urls.forEach(u => {
+      xml += '  <url>\n';
+      xml += `    <loc>${BASE_URL}${u.loc}</loc>\n`;
+      if (u.lastmod) {
+        const d = new Date(u.lastmod);
+        xml += `    <lastmod>${d.toISOString().split('T')[0]}</lastmod>\n`;
+      }
+      xml += `    <changefreq>${u.changefreq}</changefreq>\n`;
+      xml += `    <priority>${u.priority}</priority>\n`;
+      xml += '  </url>\n';
+    });
+
+    xml += '</urlset>';
+    res.type('application/xml');
+    res.send(xml);
+  } catch (err) {
+    console.error('[Sitemap] 生成失败:', err.message);
+    res.status(500).send('Sitemap generation error');
+  }
+});
+
+// ===================================================================
 // 启动
 // ===================================================================
 

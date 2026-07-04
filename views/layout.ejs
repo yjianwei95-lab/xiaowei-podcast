@@ -11,6 +11,24 @@
   <link rel="apple-touch-startup-image" href="/icon-512.png">
   <link rel="manifest" href="/manifest.json">
   <title><%= typeof title !== 'undefined' ? (title ? title + ' - ' : '') : '' %>小伟播客</title>
+  <meta name="description" content="<%= typeof pageDescription !== 'undefined' ? pageDescription : '小伟播客 - 上传你的声音，分享你的故事。支持语音配音、音频编辑、在线播放，打造你的个人播客平台。' %>">
+  <meta name="keywords" content="播客,Podcast,小伟播客,语音配音,TTS,音频编辑,在线播客,声音分享,有声内容,语音合成">
+  <meta name="author" content="小伟播客">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://xiaowei-podcast-production.up.railway.app<%= typeof canonicalPath !== 'undefined' ? canonicalPath : '' %>">
+  <!-- Baidu Site Verification - 请替换为你的验证码 -->
+  <meta name="baidu-site-verification" content="codeva-REPLACE_WITH_YOUR_CODE">
+  <!-- Open Graph -->
+  <meta property="og:title" content="<%= typeof title !== 'undefined' ? (title ? title + ' - ' : '') : '' %>小伟播客">
+  <meta property="og:description" content="<%= typeof pageDescription !== 'undefined' ? pageDescription : '上传你的声音，分享你的故事。语音配音、音频编辑、在线播放。' %>">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://xiaowei-podcast-production.up.railway.app<%= typeof canonicalPath !== 'undefined' ? canonicalPath : '' %>">
+  <meta property="og:site_name" content="小伟播客">
+  <meta property="og:locale" content="zh_CN">
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="<%= typeof title !== 'undefined' ? (title ? title + ' - ' : '') : '' %>小伟播客">
+  <meta name="twitter:description" content="<%= typeof pageDescription !== 'undefined' ? pageDescription : '上传你的声音，分享你的故事。' %>">
   <link rel="stylesheet" href="/css/style.css">
   <style>
   /* 欢迎横幅全局样式 */
