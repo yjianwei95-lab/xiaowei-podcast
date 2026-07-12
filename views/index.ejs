@@ -18,7 +18,7 @@
   <div class="announcement-bar" id="announcementBar">
     <div class="announcement-track" id="announcementTrack">
       <% (announcements || []).forEach(function(a) { %>
-        <span class="announcement-item"><%= a.text %></span>
+        <span class="announcement-item"><span class="announcement-dot"></span><%= a.text %></span>
       <% }); %>
     </div>
   </div>
@@ -28,58 +28,163 @@
     <h1>🎙️ 小伟播客</h1>
     <p class="subtitle">上传你的声音 · 分享你的故事</p>
     <div class="stats-bar">
-      <span>📚 <%= stats.totalPodcasts %> 个节目</span>
-      <span>▶️ <%= stats.totalPlayed %> 次播放</span>
-      <span>👥 <%= stats.todayVisitors %> 今日访问</span>
+      <span><strong><%= stats.totalPodcasts %></strong> 个节目</span>
+      <span><strong><%= stats.totalPlayed %></strong> 次播放</span>
+      <span><strong><%= stats.todayVisitors %></strong> 今日访问</span>
     </div>
-    <!-- 搜索框 -->
-    <div class="search-wrap">
+  </div>
+
+  <!-- 内容工具栏：搜索 + 操作 -->
+  <div class="content-toolbar" id="contentToolbar">
+    <div class="toolbar-search">
       <span class="search-icon">🔍</span>
       <input type="text" id="searchInput" class="search-input" placeholder="搜索节目、创作者..." autocomplete="off">
       <button class="search-clear" id="searchClear" style="display:none" aria-label="清除搜索">✕</button>
     </div>
-    <a href="/upload" class="btn btn-lg">📤 上传你的声音</a>
-  </div>
-
-  <!-- 主内容 + 侧边栏 -->
-  <div class="main-layout">
-    <!-- 主内容区 -->
-    <div class="main-content">
-      <!-- 标签筛选 -->
+    <div class="toolbar-actions">
+      <% if (tags && tags.length > 0) { %>
       <div class="tag-bar" id="tagBar">
         <button class="tag-btn active" data-tag="all">全部</button>
-        <% (tags || []).forEach(function(t) { %>
+        <% tags.forEach(function(t) { %>
           <button class="tag-btn" data-tag="<%= t %>"><%= t %></button>
         <% }); %>
       </div>
+      <% } %>
+      <a href="/upload" class="btn btn-upload">📤 上传你的声音</a>
+    </div>
+  </div>
 
-      <!-- 节目网格 -->
+  <!-- 最近收听（客户端渲染） -->
+  <div class="listening-history" id="listeningHistory" style="display:none">
+    <div class="listening-history-header">
+      <h3>🕘 最近收听</h3>
+      <button class="clear-history" id="clearHistory" title="清空播放历史">清空</button>
+    </div>
+    <div class="history-list" id="historyList"></div>
+  </div>
+
+  <!-- 空状态：全宽展示，不放在两栏里 -->
+  <% if (!podcasts || podcasts.length === 0) { %>
+  <div class="empty-state-wrap" id="emptyStateWrap">
+    <div class="empty-state">
+      <div class="empty-illustration">🎙️</div>
+      <h2>还没有人上传声音</h2>
+      <p>来做第一个分享者，让世界听见你的故事。</p>
+      <a href="/upload" class="btn btn-lg">📤 立即上传</a>
+    </div>
+  </div>
+
+  <!-- 示例预览：没数据时展示节目卡片效果 -->
+  <div class="demo-section" id="demoSection">
+    <div class="demo-section-header">
+      <h3>👀 上传后会这样展示</h3>
+      <p>点击卡片即可播放，支持收藏、搜索、标签筛选</p>
+    </div>
+    <div class="podcast-grid demo-grid">
+      <div class="podcast-card demo-card">
+        <div class="card-cover"><span class="card-cover-icon">🎧</span></div>
+        <div class="card-body">
+          <h3>示例：我的第一首原创歌曲</h3>
+          <p class="card-desc">在这里写下节目描述，听众会从这里了解你的作品...</p>
+          <div class="card-meta"><span>👤 小伟</span><span>▶️ 128 次</span><span>📅 2026-07-10</span></div>
+        </div>
+      </div>
+      <div class="podcast-card demo-card">
+        <div class="card-cover"><span class="card-cover-icon">🎧</span></div>
+        <div class="card-body">
+          <h3>示例：睡前故事会</h3>
+          <p class="card-desc">一段温暖的声音，适合在夜晚静静聆听...</p>
+          <div class="card-meta"><span>👤 小伟</span><span>▶️ 86 次</span><span>📅 2026-07-09</span></div>
+        </div>
+      </div>
+      <div class="podcast-card demo-card">
+        <div class="card-cover"><span class="card-cover-icon">🎧</span></div>
+        <div class="card-body">
+          <h3>示例：AI 配音作品演示</h3>
+          <p class="card-desc">用语音配音功能生成的作品会直接出现在这里...</p>
+          <div class="card-meta"><span>👤 小伟</span><span>▶️ 256 次</span><span>📅 2026-07-08</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 平台特色 -->
+  <div class="features-section" id="featuresSection">
+    <div class="features-section-header">
+      <h3>✨ 小伟播客能做什么</h3>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">📤</div>
+        <h4>上传声音</h4>
+        <p>支持 MP3、WAV、M4A 等常见格式，快速发布你的音频作品。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎤</div>
+        <h4>AI 语音配音</h4>
+        <p>输入文字即可生成自然语音，多种音色、语速、语调可调。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">❤️</div>
+        <h4>收藏与分享</h4>
+        <p>收藏喜欢的节目，随时回听；一键分享给你的朋友。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🌓</div>
+        <h4>明暗主题</h4>
+        <p>支持深色/浅色模式切换，自动跟随系统，保护眼睛。</p>
+      </div>
+    </div>
+  </div>
+  <% } %>
+
+  <!-- 主内容 + 侧边栏 -->
+  <% if (podcasts && podcasts.length > 0) { %>
+  <div class="main-layout" id="mainLayout">
+    <!-- 主内容区 -->
+    <div class="main-content">
+      <!-- 精选节目（运营后台「精选」开关，实时同步） -->
+      <% if (typeof featuredPodcasts !== 'undefined' && featuredPodcasts && featuredPodcasts.length > 0) { %>
+      <section class="curated-section featured-section">
+        <div class="curated-header">
+          <h2 class="section-heading">⭐ 精选节目</h2>
+          <span class="curated-count"><%= featuredPodcasts.length %> 个</span>
+        </div>
+        <div class="podcast-grid">
+          <% featuredPodcasts.forEach(function(p) { %>
+            <%- include('_podcast-card', { p: p, showFav: false }) %>
+          <% }); %>
+        </div>
+      </section>
+      <% } %>
+
+      <!-- 推荐节目（运营后台「推荐」开关，实时同步） -->
+      <% if (typeof recommendedPodcasts !== 'undefined' && recommendedPodcasts && recommendedPodcasts.length > 0) { %>
+      <section class="curated-section recommended-section">
+        <div class="curated-header">
+          <h2 class="section-heading">🔝 推荐节目</h2>
+          <span class="curated-count"><%= recommendedPodcasts.length %> 个</span>
+        </div>
+        <div class="podcast-grid">
+          <% recommendedPodcasts.forEach(function(p) { %>
+            <%- include('_podcast-card', { p: p, showFav: false }) %>
+          <% }); %>
+        </div>
+      </section>
+      <% } %>
+
+      <!-- 全部节目 -->
+      <div class="section-header all-podcasts-header">
+        <h2 class="section-heading">📻 全部节目</h2>
+        <span class="curated-count"><%= podcasts.length %> 个</span>
+      </div>
+      <!-- 节目网格（置顶优先，带角标） -->
       <div class="podcast-grid" id="podcastGrid">
         <% if (podcasts && podcasts.length > 0) {
           podcasts.forEach(function(p) { %>
-          <a href="/play/<%= p.uuid %>" class="podcast-card" data-title="<%= (p.title||'').replace(/"/g,'&quot;') %>" data-desc="<%= (p.description||'').replace(/"/g,'&quot;') %>" data-creator="<%= (p.uploader_name||'').replace(/"/g,'&quot;') %>">
-            <div class="card-cover">
-              <span class="card-cover-icon">🎧</span>
-              <button class="card-fav" data-uuid="<%= p.uuid %>" data-title="<%= (p.title||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') %>" aria-label="收藏">🤍</button>
-            </div>
-            <div class="card-body">
-              <h3><%= p.title %></h3>
-              <p class="card-desc"><%= p.description ? p.description.slice(0, 80) + (p.description.length > 80 ? '...' : '') : '暂无描述' %></p>
-              <div class="card-meta">
-                <span>👤 <%= p.uploader_name %></span>
-                <span>▶️ <%= p.play_count %> 次</span>
-                <span>📅 <%= new Date(p.created_at).toLocaleDateString('zh-CN', {timeZone:'Asia/Shanghai'}).replace(/\//g, '-') %></span>
-              </div>
-            </div>
-          </a>
+            <%- include('_podcast-card', { p: p, showFav: true }) %>
           <% });
-        } else { %>
-          <div class="empty-state">
-            <p>📭 还没有人上传声音</p>
-            <p>来做第一个分享者吧！</p>
-            <a href="/upload" class="btn">📤 上传声音</a>
-          </div>
-        <% } %>
+        } %>
       </div>
 
       <!-- 收藏列表（搜索/标签无结果时显示） -->
@@ -144,6 +249,7 @@
       </div>
     </aside>
   </div>
+  <% } %>
 </div>
 
 <script>
@@ -176,8 +282,12 @@
   function showHideEmpty() {
     var visible = 0;
     cards.forEach(function(c) { if (c.style.display !== 'none') visible++; });
-    var empty = podcastGrid.querySelector('.empty-state');
-    if (empty) empty.style.display = visible > 0 ? 'none' : '';
+    var emptyWrap = document.getElementById('emptyStateWrap');
+    var grid = document.getElementById('podcastGrid');
+    if (emptyWrap) {
+      emptyWrap.style.display = visible > 0 ? 'none' : 'flex';
+      if (grid) grid.style.display = visible > 0 ? 'grid' : 'none';
+    }
   }
   if (searchInput) {
     searchInput.addEventListener('input', function() {
@@ -225,13 +335,15 @@
     renderFavSection();
   }
   // 委托事件处理收藏按钮
-  podcastGrid.addEventListener('click', function(e) {
-    var favBtn = e.target.closest('.card-fav');
-    if (!favBtn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    toggleFav(favBtn.getAttribute('data-uuid'), favBtn.getAttribute('data-title'));
-  });
+  if (podcastGrid) {
+    podcastGrid.addEventListener('click', function(e) {
+      var favBtn = e.target.closest('.card-fav');
+      if (!favBtn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleFav(favBtn.getAttribute('data-uuid'), favBtn.getAttribute('data-title'));
+    });
+  }
   function updateFavIcons() {
     var favs = getFavs();
     var uuids = favs.map(function(f) { return f.uuid; });
@@ -269,6 +381,57 @@
     });
   }
   updateFavIcons();
+
+  // 播放历史（localStorage）
+  var HISTORY_KEY = 'xiaowei_history';
+  function getHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch(e) { return []; }
+  }
+  function clearHistory() {
+    localStorage.removeItem(HISTORY_KEY);
+    renderHistory();
+  }
+  function formatTimeAgo(ts) {
+    var diff = Date.now() - ts;
+    var min = Math.floor(diff / 60000);
+    if (min < 1) return '刚刚';
+    if (min < 60) return min + '分钟前';
+    var h = Math.floor(min / 60);
+    if (h < 24) return h + '小时前';
+    var d = Math.floor(h / 24);
+    if (d < 7) return d + '天前';
+    var date = new Date(ts);
+    return date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0');
+  }
+  function renderHistory() {
+    var list = getHistory();
+    var section = document.getElementById('listeningHistory');
+    var container = document.getElementById('historyList');
+    var clearBtn = document.getElementById('clearHistory');
+    if (!section || !container) return;
+    if (list.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    container.innerHTML = list.map(function(h) {
+      return '<a href="/play/' + escHtml(h.uuid) + '" class="history-item" title="' + escHtml(h.title) + '">' +
+        '<span class="history-cover">🎧</span>' +
+        '<span class="history-info">' +
+          '<span class="history-title">' + escHtml(h.title) + '</span>' +
+          '<span class="history-meta">' + escHtml(h.uploader_name || '匿名') + ' · ' + formatTimeAgo(h.at) + '</span>' +
+        '</span>' +
+      '</a>';
+    }).join('');
+    if (clearBtn) {
+      clearBtn.onclick = function() {
+        if (confirm('确定清空播放历史？')) clearHistory();
+      };
+    }
+  }
+  function escHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+  renderHistory();
 
   // 公告滚动
   var track = document.getElementById('announcementTrack');

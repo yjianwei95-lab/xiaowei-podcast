@@ -1,0 +1,49 @@
+<div class="ops-page">
+  <div class="ops-toolbar">
+    <h2 class="ops-h2">🎙️ 内容运营</h2>
+    <span class="ops-muted">共 <%= podcasts.length %> 个节目 · 置顶/精选/推荐 标记会同步到前台展示</span>
+  </div>
+
+  <div class="ops-card">
+    <table class="ops-table ops-table-full">
+      <thead>
+        <tr>
+          <th>标题</th><th>上传者</th><th>播放</th><th>文件</th><th>日期</th>
+          <th>状态</th><th>运营标记</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (podcasts && podcasts.length) { podcasts.forEach(function(p){ %>
+          <tr>
+            <td class="ops-td-title"><%= p.title %></td>
+            <td><%= p.uploader_name %></td>
+            <td><%= p.play_count %></td>
+            <td class="ops-td-file">
+              <small><%= p.original_name %></small><br>
+              <audio src="/uploads/<%= p.filename %>?v=<%= p.created_at?Date.parse(p.created_at):'' %>" controls preload="none"></audio>
+            </td>
+            <td class="ops-cell-date"><%= p.created_at ? new Date(p.created_at).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'}).replace(/\//g,'-') : '-' %></td>
+            <td>
+              <form method="POST" action="/ops/content/toggle/<%= p.id %>" style="display:inline">
+                <button class="ops-btn ops-btn-xs <%= p.status?'ops-on':'ops-off' %>"><%= p.status?'已发布':'已隐藏' %></button>
+              </form>
+            </td>
+            <td class="ops-td-flags">
+              <form method="POST" action="/ops/content/pin/<%= p.id %>" style="display:inline"><button class="ops-chip <%= p.is_pinned?'on':'' %>" title="置顶">📌</button></form>
+              <form method="POST" action="/ops/content/feature/<%= p.id %>" style="display:inline"><button class="ops-chip <%= p.is_featured?'on':'' %>" title="精选">⭐</button></form>
+              <form method="POST" action="/ops/content/recommend/<%= p.id %>" style="display:inline"><button class="ops-chip <%= p.is_recommended?'on':'' %>" title="推荐">🔝</button></form>
+            </td>
+            <td class="ops-td-actions">
+              <a href="/ops/content/edit/<%= p.id %>" class="ops-link-sm">编辑</a>
+              <form method="POST" action="/ops/content/delete/<%= p.id %>" style="display:inline" onsubmit="return confirm('确定删除《<%= p.title %>》？此操作不可恢复')">
+                <button class="ops-link-sm ops-danger">删除</button>
+              </form>
+            </td>
+          </tr>
+        <% }); } else { %>
+          <tr><td colspan="8" class="ops-empty">暂无节目</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>

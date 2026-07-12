@@ -1,0 +1,287 @@
+<div class="recorder-page">
+  <h1>🎙️ 录音室</h1>
+  <p class="recorder-subtitle">直接在浏览器里录制你的声音，录完即可发布或下载</p>
+
+  <div class="recorder-card">
+    <div class="recorder-status" id="recorderStatus">点击开始录音</div>
+    <div class="recorder-timer" id="recorderTimer">00:00</div>
+
+    <canvas id="visualizer" class="recorder-visualizer" width="600" height="120"></canvas>
+
+    <div class="recorder-controls" id="recorderControls">
+      <button class="recorder-btn btn-primary" id="btnStart" title="开始录音">🔴 开始录音</button>
+      <button class="recorder-btn btn-secondary" id="btnPause" style="display:none" title="暂停">⏸️ 暂停</button>
+      <button class="recorder-btn btn-secondary" id="btnResume" style="display:none" title="继续">▶️ 继续</button>
+      <button class="recorder-btn btn-danger" id="btnStop" style="display:none" title="停止">⏹️ 停止</button>
+    </div>
+
+    <div class="recorder-preview" id="recorderPreview" style="display:none">
+      <audio id="previewAudio" controls class="recorder-audio"></audio>
+      <div class="recorder-preview-actions">
+        <button class="btn" id="btnDownload">💾 下载录音</button>
+        <button class="btn btn-secondary" id="btnRetake">🔄 重新录制</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="recorder-publish" id="recorderPublish" style="display:none">
+    <h3>🚀 发布这个录音</h3>
+    <form id="publishForm" class="upload-form">
+      <div class="form-group">
+        <label for="pubTitle">节目名称 *</label>
+        <input type="text" id="pubTitle" name="title" required placeholder="给你的声音起个名字">
+      </div>
+      <div class="form-group">
+        <label for="pubDescription">节目简介</label>
+        <textarea id="pubDescription" name="description" rows="3" placeholder="简单介绍一下内容..."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="pubUploaderName">你的名字</label>
+          <input type="text" id="pubUploaderName" name="uploader_name" placeholder="匿名">
+        </div>
+        <div class="form-group">
+          <label for="pubUploaderEmail">邮箱（选填）</label>
+          <input type="email" id="pubUploaderEmail" name="uploader_email" placeholder="不会公开显示">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-lg btn-full" id="btnPublish">📤 发布录音</button>
+      <p class="form-tip">发布即表示你同意内容合法合规，平台有权管理不当内容。</p>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  var mediaRecorder = null;
+  var audioChunks = [];
+  var audioBlob = null;
+  var audioUrl = null;
+  var startTime = 0;
+  var pausedTime = 0;
+  var timerInterval = null;
+  var isPaused = false;
+  var analyser = null;
+  var dataArray = null;
+  var audioCtx = null;
+  var source = null;
+  var animationId = null;
+  var stream = null;
+
+  var btnStart = document.getElementById('btnStart');
+  var btnPause = document.getElementById('btnPause');
+  var btnResume = document.getElementById('btnResume');
+  var btnStop = document.getElementById('btnStop');
+  var btnDownload = document.getElementById('btnDownload');
+  var btnRetake = document.getElementById('btnRetake');
+  var btnPublish = document.getElementById('btnPublish');
+  var publishForm = document.getElementById('publishForm');
+  var statusEl = document.getElementById('recorderStatus');
+  var timerEl = document.getElementById('recorderTimer');
+  var canvas = document.getElementById('visualizer');
+  var ctx = canvas.getContext('2d');
+  var preview = document.getElementById('recorderPreview');
+  var previewAudio = document.getElementById('previewAudio');
+  var publishBox = document.getElementById('recorderPublish');
+
+  function drawIdle() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var w = canvas.width, h = canvas.height;
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, h / 2);
+    ctx.lineTo(w, h / 2);
+    ctx.stroke();
+  }
+
+  function drawVisualizer() {
+    if (!analyser) return;
+    animationId = requestAnimationFrame(drawVisualizer);
+    analyser.getByteFrequencyData(dataArray);
+
+    var w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    var barWidth = (w / dataArray.length) * 2.5;
+    var gap = 2;
+    var x = 0;
+    for (var i = 0; i < dataArray.length; i++) {
+      var barHeight = (dataArray[i] / 255) * (h * 0.85);
+      var gradient = ctx.createLinearGradient(0, h - barHeight, 0, h);
+      gradient.addColorStop(0, '#a78bfa');
+      gradient.addColorStop(1, '#f472b6');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(x, h / 2 - barHeight / 2, barWidth, barHeight);
+      x += barWidth + gap;
+    }
+  }
+
+  function updateTimer() {
+    var elapsed = Date.now() - startTime - pausedTime;
+    var totalSeconds = Math.floor(elapsed / 1000);
+    var m = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+    var s = String(totalSeconds % 60).padStart(2, '0');
+    timerEl.textContent = m + ':' + s;
+  }
+
+  function startTimer() {
+    timerInterval = setInterval(updateTimer, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+  }
+
+  function resetState() {
+    stopTimer();
+    if (animationId) cancelAnimationFrame(animationId);
+    if (stream) {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+    }
+    mediaRecorder = null;
+    audioChunks = [];
+    audioBlob = null;
+    audioUrl = null;
+    startTime = 0;
+    pausedTime = 0;
+    isPaused = false;
+    analyser = null;
+    dataArray = null;
+    audioCtx = null;
+    source = null;
+    stream = null;
+    timerEl.textContent = '00:00';
+    statusEl.textContent = '点击开始录音';
+    btnStart.style.display = 'inline-flex';
+    btnPause.style.display = 'none';
+    btnResume.style.display = 'none';
+    btnStop.style.display = 'none';
+    preview.style.display = 'none';
+    publishBox.style.display = 'none';
+    previewAudio.src = '';
+    drawIdle();
+  }
+
+  btnStart.addEventListener('click', async function() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      var bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = function(e) { audioChunks.push(e.data); };
+      mediaRecorder.onstop = function() {
+        audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+        audioUrl = URL.createObjectURL(audioBlob);
+        previewAudio.src = audioUrl;
+        preview.style.display = 'block';
+        publishBox.style.display = 'block';
+      };
+      mediaRecorder.start();
+
+      startTime = Date.now();
+      pausedTime = 0;
+      startTimer();
+      drawVisualizer();
+
+      statusEl.textContent = '正在录音...';
+      btnStart.style.display = 'none';
+      btnPause.style.display = 'inline-flex';
+      btnStop.style.display = 'inline-flex';
+    } catch (err) {
+      alert('无法访问麦克风：' + err.message);
+      console.error(err);
+    }
+  });
+
+  btnPause.addEventListener('click', function() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.pause();
+      isPaused = true;
+      pausedTime -= Date.now();
+      stopTimer();
+      statusEl.textContent = '已暂停';
+      btnPause.style.display = 'none';
+      btnResume.style.display = 'inline-flex';
+    }
+  });
+
+  btnResume.addEventListener('click', function() {
+    if (mediaRecorder && mediaRecorder.state === 'paused') {
+      mediaRecorder.resume();
+      isPaused = false;
+      pausedTime += Date.now();
+      startTimer();
+      statusEl.textContent = '正在录音...';
+      btnResume.style.display = 'none';
+      btnPause.style.display = 'inline-flex';
+    }
+  });
+
+  btnStop.addEventListener('click', function() {
+    if (mediaRecorder) mediaRecorder.stop();
+    stopTimer();
+    if (animationId) cancelAnimationFrame(animationId);
+    if (stream) stream.getTracks().forEach(function(t) { t.stop(); });
+    if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
+    statusEl.textContent = '录音完成';
+    btnPause.style.display = 'none';
+    btnResume.style.display = 'none';
+    btnStop.style.display = 'none';
+    drawIdle();
+  });
+
+  btnDownload.addEventListener('click', function() {
+    if (!audioBlob) return;
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(audioBlob);
+    a.download = 'recording_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.mp3';
+    a.click();
+  });
+
+  btnRetake.addEventListener('click', function() {
+    resetState();
+  });
+
+  publishForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    if (!audioBlob) { alert('请先录音'); return; }
+    var title = document.getElementById('pubTitle').value.trim();
+    if (!title) { alert('请输入节目名称'); return; }
+
+    btnPublish.disabled = true;
+    btnPublish.textContent = '发布中...';
+
+    var formData = new FormData();
+    formData.append('title', title);
+    formData.append('description', document.getElementById('pubDescription').value.trim());
+    formData.append('uploader_name', document.getElementById('pubUploaderName').value.trim() || '匿名');
+    formData.append('uploader_email', document.getElementById('pubUploaderEmail').value.trim());
+    formData.append('audio', audioBlob, title + '.mp3');
+
+    try {
+      var res = await fetch('/api/upload', { method: 'POST', body: formData });
+      var data = await res.json();
+      if (data.success) {
+        alert('🎉 发布成功！');
+        window.location.href = '/play/' + data.uuid;
+      } else {
+        alert(data.message || '发布失败');
+      }
+    } catch (err) {
+      alert('发布失败：' + err.message);
+    } finally {
+      btnPublish.disabled = false;
+      btnPublish.textContent = '📤 发布录音';
+    }
+  });
+
+  drawIdle();
+})();
+</script>

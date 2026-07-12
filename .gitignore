@@ -3,3 +3,8 @@ node_modules/
 *.log
 public/lib/
 uploads/.gitkeep
+
+# 密钥 / 环境变量（含 Supabase service_role key 与 Access Token，切勿提交）
+.env
+.env.*
+!.env.example

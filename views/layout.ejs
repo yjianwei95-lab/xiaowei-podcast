@@ -29,7 +29,7 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="<%= typeof title !== 'undefined' ? (title ? title + ' - ' : '') : '' %>小伟播客">
   <meta name="twitter:description" content="<%= typeof pageDescription !== 'undefined' ? pageDescription : '上传你的声音，分享你的故事。' %>">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=5">
   <style>
   /* 欢迎横幅全局样式 */
   .site-banner-wrap {
@@ -76,12 +76,13 @@
       <div class="nav-links">
         <a href="/">首页</a>
         <a href="/tts" style="color:#6366F1;font-weight:bold">🎤 语音配音</a>
+        <a href="/recorder">🎙️ 录音室</a>
         <a href="/upload">上传声音</a>
         <a href="/audio-editor" style="color:#FFD700;font-weight:bold">🎵 音频编辑</a>
         <% if (typeof session !== 'undefined' && session && (session.loggedIn || session.isAdmin || session.userId)) { %>
           <span class="nav-user">👤 <%= session.nickname || session.phone || session.username || '用户' %></span>
           <% if (session.isAdmin || session.loggedIn) { %>
-          <a href="/xiaowei-podcast-admin" style="color:#FFD700">🔧 管理</a>
+          <a href="/ops" style="color:#FFD700">🔧 运营</a>
           <% } %>
           <a href="/logout" class="nav-logout">退出</a>
         <% } else { %>

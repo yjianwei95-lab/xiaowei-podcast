@@ -10,6 +10,22 @@ const { Pool } = require('pg');
 const PgSession = require('connect-pg-simple')(session);
 const { EdgeTTS } = require('edge-tts-universal');
 
+// 极简 .env 加载（不依赖 dotenv；已存在的 process.env 优先）
+(function loadEnvFile() {
+  try {
+    const envPath = path.join(__dirname, '.env');
+    if (!fs.existsSync(envPath)) return;
+    fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
+      const clean = line.replace(/\r$/, '');
+      const m = clean.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (m) {
+        const k = m[1];
+        if (process.env[k] === undefined) process.env[k] = m[2].replace(/^["']|["']$/g, '');
+      }
+    });
+  } catch (e) {}
+})();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -184,7 +200,7 @@ function renderWithLayout(req, res, template, data = {}) {
 }
 
 function requireAdmin(req, res, next) {
-  if (!req.session.loggedIn) return res.redirect('/xiaowei-podcast-admin/login');
+  if (!req.session.loggedIn) return res.redirect('/ops/login');
   next();
 }
 
@@ -222,6 +238,25 @@ async function getStats() {
   } catch (e) {
     console.error('getStats error:', e.message);
     return { totalPodcasts: 0, totalPlayed: 0, totalVisitors: 0, todayVisitors: 0, totalSize: 0 };
+  }
+}
+
+// 公告：优先读数据库 announcements 表（由运营系统管理），无则回退硬编码
+async function getAnnouncements() {
+  if (!supabase) return ANNOUNCEMENTS;
+  try {
+    const { data, error } = await supabase
+      .from('announcements')
+      .select('*')
+      .eq('active', true)
+      .order('sort', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    if (data && data.length) return data.map(a => ({ id: a.id, text: a.text, date: a.date }));
+    return ANNOUNCEMENTS;
+  } catch (e) {
+    console.warn('[公告] 读取数据库失败，使用硬编码:', e.message);
+    return ANNOUNCEMENTS;
   }
 }
 
@@ -371,6 +406,22 @@ app.get('/', async (req, res) => {
     console.log('【首页查询成功】获取到', podcasts ? podcasts.length : 0, '条节目');
     const stats = await getStats();
 
+    // 主列表：置顶（is_pinned）优先，其余按创建时间倒序（运营后台置顶开关实时生效）
+    const sortedPodcasts = [...(podcasts || [])].sort((a, b) => {
+      const pa = a.is_pinned ? 1 : 0;
+      const pb = b.is_pinned ? 1 : 0;
+      if (pa !== pb) return pb - pa; // 置顶排前
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+
+    // 精选（is_featured）与推荐（is_recommended）区块数据，均按创建时间倒序
+    const featuredPodcasts = [...(podcasts || [])]
+      .filter(p => p.is_featured)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const recommendedPodcasts = [...(podcasts || [])]
+      .filter(p => p.is_recommended)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
     // 热门排行 Top 5（按播放量）
     const hotPodcasts = [...(podcasts || [])].sort((a, b) => (b.play_count || 0) - (a.play_count || 0)).slice(0, 5);
 
@@ -388,25 +439,29 @@ app.get('/', async (req, res) => {
     const topCreators = Object.entries(creatorCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
 
     renderWithLayout(req, res, 'index', {
-      podcasts: podcasts || [],
+      podcasts: sortedPodcasts,
+      featuredPodcasts,
+      recommendedPodcasts,
       stats,
       hotPodcasts,
       recentPodcasts,
       tags,
       topCreators,
-      announcements: ANNOUNCEMENTS,
+      announcements: await getAnnouncements(),
       title: '小伟播客'
     });
   } catch (e) {
     console.error('【首页错误】', e.message, e);
     renderWithLayout(req, res, 'index', {
       podcasts: [],
+      featuredPodcasts: [],
+      recommendedPodcasts: [],
       stats: { totalPodcasts:0, totalPlayed:0, totalVisitors:0, todayVisitors:0, totalSize:0 },
       hotPodcasts: [],
       recentPodcasts: [],
       tags: [],
       topCreators: [],
-      announcements: ANNOUNCEMENTS,
+      announcements: await getAnnouncements(),
       title: '小伟播客'
     });
   }
@@ -468,6 +523,9 @@ app.get('/play/:uuid', async (req, res) => {
 
 // 上传页面
 app.get('/upload', (req, res) => renderWithLayout(req, res, 'upload', { title: '上传声音' }));
+
+// 录音室页面
+app.get('/recorder', (req, res) => renderWithLayout(req, res, 'recorder', { title: '录音室' }));
 
 // 上传处理
 app.post('/upload', (req, res) => {
@@ -542,6 +600,66 @@ app.post('/upload', (req, res) => {
       console.error('上传错误:', e.message);
       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       renderWithLayout(req, res, 'upload', { title: '上传声音', flash: { category: 'error', message: '上传失败: ' + e.message } });
+    }
+  });
+});
+
+// API 上传（录音室等场景用）
+app.post('/api/upload', (req, res) => {
+  upload.single('audio')(req, res, async (err) => {
+    if (err) return res.json({ success: false, message: err.message });
+    if (!req.file) return res.json({ success: false, message: '请选择文件' });
+
+    const { title, description, uploader_name, uploader_email } = req.body;
+    if (!title || !title.trim()) {
+      fs.unlinkSync(req.file.path);
+      return res.json({ success: false, message: '请输入标题' });
+    }
+
+    try {
+      const fileBuffer = fs.readFileSync(req.file.path);
+      const filePath = `${req.file.filename}`;
+      const ext = req.file.originalname.split('.').pop().toLowerCase();
+      const contentType = AUDIO_CONTENT_TYPES[ext] || 'audio/mpeg';
+
+      const { error: uploadError } = await supabase.storage
+        .from('audio')
+        .upload(filePath, fileBuffer, { contentType, upsert: false });
+
+      if (uploadError) {
+        console.error('❌ Storage上传失败:', uploadError.message);
+        fs.unlinkSync(req.file.path);
+        return res.json({ success: false, message: '上传到云存储失败：' + uploadError.message });
+      }
+
+      fs.unlinkSync(req.file.path);
+      console.log('✅ API Storage上传成功:', filePath);
+
+      const { data: episode, error: dbError } = await supabase
+        .from('episodes')
+        .insert([{
+          title: title.trim(),
+          description: (description || '').trim(),
+          filename: req.file.filename,
+          original_name: req.file.originalname,
+          file_size: req.file.size,
+          duration: '',
+          uploader_name: (uploader_name || '匿名').trim(),
+          uploader_email: (uploader_email || '').trim(),
+          uploader_ip: getClientIP(req),
+          uploader_agent: req.headers['user-agent'] || '',
+          play_count: 0,
+          status: 1
+        }])
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+      res.json({ success: true, uuid: episode.uuid, title: title.trim() });
+    } catch (e) {
+      console.error('API上传错误:', e.message);
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      res.json({ success: false, message: '上传失败: ' + e.message });
     }
   });
 });
@@ -1001,9 +1119,9 @@ app.get('/api/creators', async (req, res) => {
   }
 });
 
-// 公告
-app.get('/api/announcements', (req, res) => {
-  res.json({ success: true, announcements: ANNOUNCEMENTS });
+// 公告（读数据库，实时受运营系统控制）
+app.get('/api/announcements', async (req, res) => {
+  res.json({ success: true, announcements: await getAnnouncements() });
 });
 
 // 站点统计
@@ -1080,250 +1198,6 @@ app.post('/api/episodes/:uuid/comments', async (req, res) => {
   }
 });
 
-// ===================================================================
-// 后台管理
-// ===================================================================
-
-app.get('/xiaowei-podcast-admin/login', (req, res) => req.session.loggedIn ? res.redirect('/xiaowei-podcast-admin') : res.render('admin/login', { flash: null }));
-
-app.post('/xiaowei-podcast-admin/login', async (req, res) => {
-  try {
-    const { data: user, error } = await supabase
-      .from('admins')
-      .select('*')
-      .eq('username', req.body.username)
-      .eq('password', req.body.password)
-      .single();
-
-    if (user) {
-      req.session.loggedIn = true;
-      req.session.isAdmin = true;
-      req.session.username = req.body.username;
-      return res.redirect('/xiaowei-podcast-admin');
-    }
-    res.render('admin/login', { flash: { category: 'error', message: '用户名或密码错误' } });
-  } catch (e) {
-    res.render('admin/login', { flash: { category: 'error', message: '登录失败' } });
-  }
-});
-
-app.get('/xiaowei-podcast-admin/logout', (req, res) => { req.session.destroy(); res.redirect('/xiaowei-podcast-admin/login'); });
-
-// 后台总览
-app.get('/xiaowei-podcast-admin', requireAdmin, async (req, res) => {
-  try {
-    const stats = await getStats();
-
-    const { data: recentPodcasts } = await supabase
-      .from('episodes')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    const { data: recentVisitors } = await supabase
-      .from('visitors')
-      .select('*')
-      .order('visited_at', { ascending: false })
-      .limit(10);
-
-    // 补充节目标题
-    const { data: allEpisodes } = await supabase.from('episodes').select('uuid, title');
-    const episodeTitleMap = {};
-    (allEpisodes || []).forEach(ep => episodeTitleMap[ep.uuid] = ep.title);
-
-    const visitorsWithTitle = (recentVisitors || []).map(v => ({
-      ...v,
-      podcast_title: episodeTitleMap[v.episode_uuid] || ''
-    }));
-
-    renderWithLayout(req, res, 'admin/dashboard', { stats, recentPodcasts: recentPodcasts || [], recentVisitors: visitorsWithTitle, title: '后台总览' });
-  } catch (e) {
-    console.error('后台总览错误:', e.message);
-    renderWithLayout(req, res, 'admin/dashboard', { stats: { totalPodcasts:0, totalPlayed:0, totalVisitors:0, todayVisitors:0, totalSize:0 }, recentPodcasts: [], recentVisitors: [], title: '后台总览' });
-  }
-});
-
-// 播客管理
-app.get('/xiaowei-podcast-admin/podcasts', requireAdmin, async (req, res) => {
-  try {
-    const { data: podcasts, error } = await supabase
-      .from('episodes')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    renderWithLayout(req, res, 'admin/podcasts', { podcasts: podcasts || [], title: '播客管理' });
-  } catch (e) {
-    renderWithLayout(req, res, 'admin/podcasts', { podcasts: [], title: '播客管理' });
-  }
-});
-
-// 切换状态（显示/隐藏）
-app.post('/xiaowei-podcast-admin/toggle/:id', requireAdmin, async (req, res) => {
-  try {
-    const { data: episode } = await supabase.from('episodes').select('status').eq('id', req.params.id).single();
-    if (episode) {
-      await supabase.from('episodes').update({ status: episode.status ? 0 : 1 }).eq('id', req.params.id);
-    }
-  } catch (e) { console.error('toggle error:', e.message); }
-  res.redirect('/xiaowei-podcast-admin/podcasts');
-});
-
-// 删除节目
-app.post('/xiaowei-podcast-admin/delete/:id', requireAdmin, async (req, res) => {
-  try {
-    const { data: episode } = await supabase.from('episodes').select('uuid, filename').eq('id', req.params.id).single();
-    if (episode) {
-      // 删除 Storage 中的音频文件
-      await supabase.storage.from('audio').remove([`${episode.filename}`]);
-      // 删除本地文件（如果存在）
-      const localPath = path.join(UPLOAD_DIR, episode.filename);
-      if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
-      // 删除访客记录
-      await supabase.from('visitors').delete().eq('episode_uuid', episode.uuid);
-      // 删除节目记录
-      await supabase.from('episodes').delete().eq('id', req.params.id);
-    }
-  } catch (e) { console.error('delete error:', e.message); }
-  res.redirect('/xiaowei-podcast-admin/podcasts');
-});
-
-// 编辑节目
-app.get('/xiaowei-podcast-admin/edit/:id', requireAdmin, async (req, res) => {
-  try {
-    const { data: podcast, error } = await supabase.from('episodes').select('*').eq('id', req.params.id).single();
-    if (error || !podcast) return res.redirect('/xiaowei-podcast-admin/podcasts');
-    renderWithLayout(req, res, 'admin/edit', { podcast, title: '编辑播客' });
-  } catch (e) {
-    res.redirect('/xiaowei-podcast-admin/podcasts');
-  }
-});
-
-app.post('/xiaowei-podcast-admin/edit/:id', requireAdmin, async (req, res) => {
-  try {
-    await supabase.from('episodes').update({
-      title: req.body.title,
-      uploader_name: req.body.uploader_name,
-      uploader_email: req.body.uploader_email,
-      description: req.body.description || ''
-    }).eq('id', req.params.id);
-  } catch (e) { console.error('edit error:', e.message); }
-  res.redirect('/xiaowei-podcast-admin/podcasts');
-});
-
-// 替换音频
-app.post('/xiaowei-podcast-admin/replace-audio/:id', requireAdmin, (req, res) => {
-  upload.single('audio')(req, res, async (err) => {
-    if (err || !req.file) return res.redirect('/xiaowei-podcast-admin/edit/' + req.params.id);
-    try {
-      const { data: episode } = await supabase.from('episodes').select('filename, uuid').eq('id', req.params.id).single();
-      if (episode) {
-        // 删除旧文件
-        await supabase.storage.from('audio').remove([`${episode.filename}`]);
-        const oldLocal = path.join(UPLOAD_DIR, episode.filename);
-        if (fs.existsSync(oldLocal)) fs.unlinkSync(oldLocal);
-
-        // 上传新文件（使用正确的 Content-Type）
-        const fileBuffer = fs.readFileSync(req.file.path);
-        const replaceExt = req.file.originalname.split('.').pop().toLowerCase();
-        const replaceContentType = AUDIO_CONTENT_TYPES[replaceExt] || 'audio/mpeg';
-        await supabase.storage.from('audio').upload(`${req.file.filename}`, fileBuffer, { contentType: replaceContentType });
-        fs.unlinkSync(req.file.path);
-
-        // 更新数据库
-        await supabase.from('episodes').update({
-          filename: req.file.filename,
-          original_name: req.file.originalname,
-          file_size: req.file.size,
-          created_at: localNow()
-        }).eq('id', req.params.id);
-      }
-    } catch (e) { console.error('replace audio error:', e.message); }
-    res.redirect('/xiaowei-podcast-admin/edit/' + req.params.id);
-  });
-});
-
-// 访客记录
-app.get('/xiaowei-podcast-admin/visitors', requireAdmin, async (req, res) => {
-  try {
-    const { data: visitors, error } = await supabase
-      .from('visitors')
-      .select('*')
-      .order('visited_at', { ascending: false });
-
-    const { data: episodes } = await supabase.from('episodes').select('uuid, title');
-    const episodeMap = {};
-    (episodes || []).forEach(ep => episodeMap[ep.uuid] = ep.title);
-
-    const visitorsWithInfo = (visitors || []).map(v => ({
-      ...v,
-      podcast_title: episodeMap[v.episode_uuid] || '',
-      uploader_name: episodeMap[v.episode_uuid] || ''
-    }));
-
-    const byPodcast = (episodes || []).map(ep => ({
-      uuid: ep.uuid,
-      title: ep.title,
-      visits: (visitors || []).filter(v => v.episode_uuid === ep.uuid).length,
-      last_visit: (visitors || []).filter(v => v.episode_uuid === ep.uuid).pop()?.visited_at
-    })).sort((a, b) => b.visits - a.visits);
-
-    renderWithLayout(req, res, 'admin/visitors', { visitors: visitorsWithInfo, byPodcast, title: '访客记录' });
-  } catch (e) {
-    console.error('visitors error:', e.message);
-    renderWithLayout(req, res, 'admin/visitors', { visitors: [], byPodcast: [], title: '访客记录' });
-  }
-});
-
-// 修改管理员密码
-app.get('/xiaowei-podcast-admin/password', requireAdmin, (req, res) => renderWithLayout(req, res, 'admin/password', { title: '修改密码' }));
-
-app.post('/xiaowei-podcast-admin/password', requireAdmin, async (req, res) => {
-  try {
-    const { data: user, error } = await supabase
-      .from('admins')
-      .select('*')
-      .eq('username', req.session.username)
-      .eq('password', req.body.old_password)
-      .single();
-
-    if (user) {
-      await supabase.from('admins').update({ password: req.body.new_password }).eq('username', req.session.username);
-      res.redirect('/xiaowei-podcast-admin');
-    } else {
-      renderWithLayout(req, res, 'admin/password', { flash: { category: 'error', message: '原密码错误' } });
-    }
-  } catch (e) {
-    renderWithLayout(req, res, 'admin/password', { flash: { category: 'error', message: '修改失败' } });
-  }
-});
-
-// ===================================================================
-// 评论管理
-// ===================================================================
-
-app.get('/xiaowei-podcast-admin/comments', requireAdmin, async (req, res) => {
-  try {
-    const { data: comments, error } = await supabase
-      .from('comments')
-      .select('*, episodes(title)')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    renderWithLayout(req, res, 'admin/comments', { comments: comments || [], title: '评论管理' });
-  } catch (e) {
-    console.error('评论管理错误:', e.message);
-    renderWithLayout(req, res, 'admin/comments', { comments: [], title: '评论管理' });
-  }
-});
-
-app.post('/xiaowei-podcast-admin/comments/delete/:id', requireAdmin, async (req, res) => {
-  try {
-    await supabase.from('comments').update({ status: 0 }).eq('id', req.params.id);
-  } catch (e) { console.error('delete comment error:', e.message); }
-  res.redirect('/xiaowei-podcast-admin/comments');
-});
-
-// ===================================================================
 // TTS 语音配音（合并自语音工坊）
 // ===================================================================
 
@@ -1420,12 +1294,22 @@ app.post('/api/free-tts', async (req, res) => {
 
 const BASE_URL = 'https://xiaowei-podcast-production.up.railway.app';
 
+function escXml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 // robots.txt
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
   res.send(`User-agent: *
 Allow: /
-Disallow: /xiaowei-podcast-admin
+Disallow: /ops
 Disallow: /api/
 Sitemap: ${BASE_URL}/sitemap.xml
 `);
@@ -1490,6 +1374,69 @@ app.get('/sitemap.xml', async (req, res) => {
   }
 });
 
+// RSS Feed（播客订阅）
+app.get('/feed.xml', async (req, res) => {
+  try {
+    const protocol = req.headers['x-forwarded-proto'] || (req.connection.encrypted ? 'https' : 'http');
+    const host = req.headers.host || 'localhost:' + PORT;
+    const siteUrl = `${protocol}://${host}`;
+    const now = new Date().toUTCString();
+
+    let itemsXml = '';
+
+    if (supabase) {
+      try {
+        const { data: episodes, error } = await supabase
+          .from('episodes')
+          .select('uuid, title, description, filename, file_size, play_count, created_at, updated_at')
+          .eq('status', 1)
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (episodes && !error) {
+          episodes.forEach(ep => {
+            const pubDate = new Date(ep.created_at || ep.updated_at).toUTCString();
+            const epUrl = `${siteUrl}/play/${ep.uuid}`;
+            const audioUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/${ep.filename}`;
+            itemsXml += '    <item>\n';
+            itemsXml += `      <title>${escXml(ep.title)}</title>\n`;
+            itemsXml += `      <link>${epUrl}</link>\n`;
+            itemsXml += `      <guid isPermaLink="true">${epUrl}</guid>\n`;
+            itemsXml += `      <pubDate>${pubDate}</pubDate>\n`;
+            itemsXml += `      <description>${escXml(ep.description || '')}</description>\n`;
+            itemsXml += `      <enclosure url="${audioUrl}" length="${ep.file_size || 0}" type="audio/mpeg"/>\n`;
+            itemsXml += '    </item>\n';
+          });
+        }
+      } catch (e) {
+        console.warn('[RSS] 获取播客列表失败:', e.message);
+      }
+    }
+
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">\n';
+    xml += '  <channel>\n';
+    xml += `    <title>小伟播客</title>\n`;
+    xml += `    <link>${siteUrl}</link>\n`;
+    xml += `    <description>上传你的声音，分享你的故事。支持语音配音、音频编辑、在线播放。</description>\n`;
+    xml += `    <language>zh-CN</language>\n`;
+    xml += `    <lastBuildDate>${now}</lastBuildDate>\n`;
+    xml += `    <generator>小伟播客</generator>\n`;
+    xml += `    <itunes:author>小伟播客</itunes:author>\n`;
+    xml += `    <itunes:category text="Podcasts"></itunes:category>\n`;
+    xml += `    <itunes:explicit>no</itunes:explicit>\n`;
+    xml += itemsXml;
+    xml += '  </channel>\n';
+    xml += '</rss>';
+
+    res.type('application/xml');
+    res.send(xml);
+  } catch (err) {
+    console.error('[RSS] 生成失败:', err.message);
+    res.status(500).send('RSS generation error');
+  }
+});
+
 // ===================================================================
 // 启动
 // ===================================================================
@@ -1499,10 +1446,8 @@ console.log('  🎙️ 小伟播客已启动！');
 console.log(`  🌐 前台地址: http://localhost:${PORT}`);
 console.log(`  🎤 语音配音: http://localhost:${PORT}/tts`);
 console.log(`  📤 上传页面: http://localhost:${PORT}/upload`);
-console.log(`  🔐 后台地址: http://localhost:${PORT}/xiaowei-podcast-admin/login`);
-console.log('  👤 默认账号: admin');
-console.log('  🔑 默认密码: admin123');
-console.log('  ⚠️  首次登录后请尽快修改密码！');
+console.log(`  🛠️  运营系统: http://localhost:4000/ops/login`);
+console.log('  👤 运营账号见 admins 表（默认 admin / admin123，请尽快修改）');
 console.log('='.repeat(55));
 app.listen(PORT, '0.0.0.0');
 // force redeploy Sat Jun  6 03:20:23     2026

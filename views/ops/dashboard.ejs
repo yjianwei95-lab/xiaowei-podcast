@@ -1,0 +1,132 @@
+<div class="ops-page">
+  <!-- 统计卡片 -->
+  <div class="ops-stats">
+    <div class="ops-stat">
+      <span class="ops-stat-ico">🎙️</span>
+      <span class="ops-stat-num"><%= stats.totalPodcasts %></span>
+      <span class="ops-stat-label">已发布节目</span>
+    </div>
+    <div class="ops-stat">
+      <span class="ops-stat-ico">▶️</span>
+      <span class="ops-stat-num"><%= stats.totalPlayed %></span>
+      <span class="ops-stat-label">总播放次数</span>
+    </div>
+    <div class="ops-stat">
+      <span class="ops-stat-ico">👥</span>
+      <span class="ops-stat-num"><%= stats.totalVisitors %></span>
+      <span class="ops-stat-label">总访问量</span>
+    </div>
+    <div class="ops-stat">
+      <span class="ops-stat-ico">📅</span>
+      <span class="ops-stat-num"><%= stats.todayVisitors %></span>
+      <span class="ops-stat-label">今日访问</span>
+    </div>
+    <div class="ops-stat">
+      <span class="ops-stat-ico">💬</span>
+      <span class="ops-stat-num"><%= stats.totalComments %></span>
+      <span class="ops-stat-label">评论数</span>
+    </div>
+    <div class="ops-stat">
+      <span class="ops-stat-ico">🧑</span>
+      <span class="ops-stat-num"><%= stats.totalUsers %></span>
+      <span class="ops-stat-label">注册用户</span>
+    </div>
+    <div class="ops-stat">
+      <span class="ops-stat-ico">💾</span>
+      <span class="ops-stat-num"><%= (stats.totalSize/1048576).toFixed(1) %>M</span>
+      <span class="ops-stat-label">总存储</span>
+    </div>
+  </div>
+
+  <!-- 趋势图 -->
+  <div class="ops-grid-2">
+    <div class="ops-card">
+      <h3 class="ops-card-title">📈 近 30 天访问量</h3>
+      <% var vmax = Math.max(1, ...visitorTrend.map(function(d){return d.count;})); %>
+      <div class="ops-barchart">
+        <% visitorTrend.forEach(function(d){ %>
+          <div class="ops-bar-col" title="<%= d.date %>：<%= d.count %> 次">
+            <div class="ops-bar" style="height:<%= Math.round(d.count/vmax*100) %>%"></div>
+            <span class="ops-bar-x"><%= d.date.slice(5) %></span>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+    <div class="ops-card">
+      <h3 class="ops-card-title">🎙️ 近 30 天内容增长</h3>
+      <% var umax = Math.max(1, ...uploadTrend.map(function(d){return d.count;})); %>
+      <div class="ops-barchart">
+        <% uploadTrend.forEach(function(d){ %>
+          <div class="ops-bar-col" title="<%= d.date %>：<%= d.count %> 个">
+            <div class="ops-bar ops-bar-2" style="height:<%= Math.round(d.count/umax*100) %>%"></div>
+            <span class="ops-bar-x"><%= d.date.slice(5) %></span>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+
+  <div class="ops-grid-2">
+    <!-- 热门节目 -->
+    <div class="ops-card">
+      <h3 class="ops-card-title">🔥 播放量 Top 10</h3>
+      <% if (topEpisodes && topEpisodes.length) { %>
+        <ol class="ops-rank">
+          <% topEpisodes.forEach(function(e){ %>
+            <li><span class="ops-rank-name"><%= e.title.length>22 ? e.title.slice(0,22)+'…' : e.title %></span><span class="ops-rank-val"><%= e.play_count %> 次</span></li>
+          <% }); %>
+        </ol>
+      <% } else { %>
+        <p class="ops-empty">暂无数据</p>
+      <% } %>
+    </div>
+
+    <!-- 最近上传 -->
+    <div class="ops-card">
+      <h3 class="ops-card-title">🕐 最近上传</h3>
+      <% if (recentPodcasts && recentPodcasts.length) { %>
+        <table class="ops-table">
+          <thead><tr><th>标题</th><th>上传者</th><th>播放</th><th>状态</th></tr></thead>
+          <tbody>
+            <% recentPodcasts.forEach(function(p){ %>
+              <tr>
+                <td><%= p.title %></td>
+                <td><%= p.uploader_name %></td>
+                <td><%= p.play_count %></td>
+                <td><span class="ops-badge <%= p.status?'on':'off' %>"><%= p.status?'已发布':'已隐藏' %></span></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <p class="ops-empty">暂无数据</p>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- 最近访客 -->
+  <div class="ops-card">
+    <h3 class="ops-card-title">🕵️ 最近访客</h3>
+    <% if (visitorsWithTitle && visitorsWithTitle.length) { %>
+      <table class="ops-table">
+        <thead><tr><th>节目</th><th>IP</th><th>设备</th><th>系统</th><th>时间</th></tr></thead>
+        <tbody>
+          <% visitorsWithTitle.forEach(function(v){
+            var dev = v.device_type==='mobile'?'📱':v.device_type==='tablet'?'📲':'💻';
+            var os = [v.os, v.os_version].filter(Boolean).join(' ')||'-';
+          %>
+            <tr>
+              <td><%= v.podcast_title || '未知' %></td>
+              <td><span class="ops-ip"><%= v.ip %></span></td>
+              <td><%= dev %> <%= v.device_type||'未知' %></td>
+              <td><%= os %></td>
+              <td class="ops-cell-date"><%= v.visited_at ? new Date(v.visited_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(/\//g,'-') : '-' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } else { %>
+      <p class="ops-empty">暂无访问记录</p>
+    <% } %>
+  </div>
+</div>

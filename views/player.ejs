@@ -26,7 +26,7 @@
   </div>
 
   <!-- 评论区 -->
-  <div class="section-box" id="comments-section">
+  <div class="comments-section" id="comments-section">
     <h3>💬 评论区</h3>
     <div id="comments-list"></div>
     <% if (user) { %>
@@ -40,37 +40,18 @@
         </div>
       </div>
       <button class="btn" onclick="submitComment()">发表评论</button>
-      <div style="font-size:12px; color:#999; margin-top:6px;">以 <b><%= user.nickname || user.username %></b> 的身份评论 · <a href="/logout" style="color:#999;">退出</a></div>
+      <div class="comment-hint">以 <b><%= user.nickname || user.username %></b> 的身份评论 · <a href="/logout">退出</a></div>
     </div>
     <% } else { %>
-    <div style="text-align:center; padding:20px; color:#999;">
+    <div class="comment-login-tip">
       <p>请先登录后评论</p>
-      <a href="/login" class="btn" style="display:inline-block; width:auto; padding:8px 24px; margin-top:8px; text-decoration:none;">登录 / 注册</a>
+      <a href="/login" class="btn">登录 / 注册</a>
     </div>
     <% } %>
   </div>
 
   <a href="/" class="back-link">← 返回首页</a>
 </div>
-
-<style>
-.section-box { background:#f7f7f7; border-radius:12px; padding:16px; margin:16px 0; }
-.section-box h3 { margin:0 0 12px 0; font-size:16px; }
-.comment-item { background:#fff; border-radius:8px; padding:10px 12px; margin:8px 0; font-size:14px; }
-.comment-nickname { font-weight:600; color:#333; }
-.comment-time { color:#999; font-size:12px; margin-left:8px; }
-.comment-content { margin-top:6px; color:#444; white-space:pre-wrap; word-break:break-all; }
-.comment-form input, .comment-form textarea {
-.comment-input-wrap textarea { padding-right:40px; }
-.emoji-btn { position:absolute; right:6px; top:6px; width:28px; height:28px; border:none; background:transparent; font-size:18px; cursor:pointer; border-radius:4px; display:flex; align-items:center; justify-content:center; }
-.emoji-btn:hover { background:#eee; }
-.emoji-picker { display:none; position:absolute; right:0; top:36px; width:280px; background:#fff; border:1px solid #ddd; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.12); z-index:100; padding:8px; }
-.emoji-picker.show { display:block; }
-.emoji-title { font-size:12px; color:#999; margin-bottom:6px; }
-.emoji-grid { display:grid; grid-template-columns:repeat(8, 1fr); gap:2px; max-height:180px; overflow-y:auto; }
-.emoji-grid span { font-size:20px; cursor:pointer; padding:4px; border-radius:4px; text-align:center; }
-.emoji-grid span:hover { background:#f0f0f0; }
-</style>
 
 <script>
 var episodeUuid = '<%= podcast.uuid %>';
@@ -85,7 +66,7 @@ function loadComments() {
   fetch('/api/episodes/' + episodeUuid + '/comments').then(r=>r.json()).then(d=>{
     if(!d.success) return;
     var html = '';
-    if(d.comments.length===0) html = '<p style="color:#999;text-align:center;">暂无评论，来说两句吧～</p>';
+    if(d.comments.length===0) html = '<p class="comments-empty">暂无评论，来说两句吧～</p>';
     d.comments.forEach(c=>{
       html += '<div class="comment-item"><span class="comment-nickname">' + escHtml(c.nickname) + '</span><span class="comment-time">' + formatLocalTime(c.created_at) + '</span><div class="comment-content">' + escHtml(c.content) + '</div></div>';
     });
@@ -168,4 +149,30 @@ document.addEventListener('click', function(e) {
 
 // 页面加载时拉取数据
 loadComments();
+
+// 记录播放历史
+(function() {
+  var audio = document.getElementById('audio-player');
+  if (!audio) return;
+  var recorded = false;
+  audio.addEventListener('play', function() {
+    if (recorded) return;
+    recorded = true;
+    try {
+      var key = 'xiaowei_history';
+      var list = JSON.parse(localStorage.getItem(key)) || [];
+      var item = {
+        uuid: '<%= podcast.uuid %>',
+        title: '<%= (podcast.title || '').replace(/'/g, "\\'") %>',
+        uploader_name: '<%= (podcast.uploader_name || '匿名').replace(/'/g, "\\'") %>',
+        play_count: <%= podcast.play_count || 0 %>,
+        at: Date.now()
+      };
+      list = list.filter(function(x) { return x.uuid !== item.uuid; });
+      list.unshift(item);
+      if (list.length > 20) list = list.slice(0, 20);
+      localStorage.setItem(key, JSON.stringify(list));
+    } catch (e) { console.error('播放历史记录失败', e); }
+  });
+})();
 </script>

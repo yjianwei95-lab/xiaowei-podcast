@@ -1,0 +1,31 @@
+<div class="ops-page">
+  <div class="ops-toolbar">
+    <h2 class="ops-h2">💬 评论审核</h2>
+    <span class="ops-muted">共 <%= comments.length %> 条评论</span>
+  </div>
+
+  <div class="ops-card">
+    <% if (comments && comments.length) { %>
+      <table class="ops-table ops-table-full">
+        <thead><tr><th>昵称</th><th>内容</th><th>节目</th><th>时间</th><th>操作</th></tr></thead>
+        <tbody>
+          <% comments.forEach(function(c){ %>
+            <tr class="<%= c.status?'':'ops-row-off' %>">
+              <td><%= c.nickname %></td>
+              <td class="ops-td-content"><%= c.content %></td>
+              <td><%= c.episodes && c.episodes.title ? c.episodes.title : '未知' %></td>
+              <td class="ops-cell-date"><%= c.created_at ? new Date(c.created_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(/\//g,'-') : '-' %></td>
+              <td class="ops-td-actions">
+                <form method="POST" action="/ops/comments/delete/<%= c.id %>" style="display:inline" onsubmit="return confirm('确定删除该评论？')">
+                  <button class="ops-link-sm ops-danger">删除</button>
+                </form>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } else { %>
+      <p class="ops-empty">暂无评论</p>
+    <% } %>
+  </div>
+</div>

@@ -1,0 +1,40 @@
+<div class="ops-page">
+  <div class="ops-toolbar">
+    <h2 class="ops-h2">📢 公告与活动</h2>
+    <span class="ops-muted">公告实时展示在前台首页顶部</span>
+  </div>
+
+  <div class="ops-card">
+    <h3 class="ops-card-title">➕ 新增公告</h3>
+    <form method="POST" action="/ops/announcements/add" class="ops-form ops-form-inline">
+      <input type="text" name="text" placeholder="公告内容，例如：🎉 新版本上线" required style="flex:1">
+      <input type="date" name="date" value="<%= new Date().toISOString().slice(0,10) %>">
+      <label class="ops-check-inline"><input type="checkbox" name="active" checked> 立即展示</label>
+      <button type="submit" class="ops-btn ops-btn-primary">发布</button>
+    </form>
+  </div>
+
+  <div class="ops-card">
+    <h3 class="ops-card-title">📋 公告列表</h3>
+    <% if (announcements && announcements.length) { %>
+      <table class="ops-table ops-table-full">
+        <thead><tr><th>内容</th><th>日期</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <% announcements.forEach(function(a){ %>
+            <tr>
+              <td><%= a.text %></td>
+              <td class="ops-cell-date"><%= a.date ? String(a.date).slice(0,10) : '-' %></td>
+              <td><span class="ops-badge <%= a.active?'on':'off' %>"><%= a.active?'展示中':'已隐藏' %></span></td>
+              <td class="ops-td-actions">
+                <form method="POST" action="/ops/announcements/toggle/<%= a.id %>" style="display:inline"><button class="ops-link-sm"><%= a.active?'隐藏':'展示' %></button></form>
+                <form method="POST" action="/ops/announcements/delete/<%= a.id %>" style="display:inline" onsubmit="return confirm('确定删除该公告？')"><button class="ops-link-sm ops-danger">删除</button></form>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } else { %>
+      <p class="ops-empty">暂无公告</p>
+    <% } %>
+  </div>
+</div>

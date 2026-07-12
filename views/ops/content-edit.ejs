@@ -1,0 +1,51 @@
+<div class="ops-page">
+  <div class="ops-toolbar">
+    <a href="/ops/content" class="ops-btn ops-btn-ghost">← 返回内容列表</a>
+    <h2 class="ops-h2">✏️ 编辑内容</h2>
+  </div>
+
+  <div class="ops-card">
+    <form method="POST" class="ops-form">
+      <div class="ops-form-row">
+        <label>标题</label>
+        <input type="text" name="title" value="<%= podcast.title %>" required>
+      </div>
+      <div class="ops-form-row">
+        <label>上传者</label>
+        <input type="text" name="uploader_name" value="<%= podcast.uploader_name %>">
+      </div>
+      <div class="ops-form-row">
+        <label>邮箱</label>
+        <input type="email" name="uploader_email" value="<%= podcast.uploader_email %>">
+      </div>
+      <div class="ops-form-row">
+        <label>描述</label>
+        <textarea name="description" rows="4"><%= podcast.description || '' %></textarea>
+      </div>
+      <div class="ops-form-row ops-flags-row">
+        <label>运营标记</label>
+        <div class="ops-check">
+          <label><input type="checkbox" name="is_pinned" <%= podcast.is_pinned?'checked':'' %>> 📌 置顶</label>
+          <label><input type="checkbox" name="is_featured" <%= podcast.is_featured?'checked':'' %>> ⭐ 精选</label>
+          <label><input type="checkbox" name="is_recommended" <%= podcast.is_recommended?'checked':'' %>> 🔝 推荐</label>
+        </div>
+      </div>
+      <div class="ops-form-actions">
+        <button type="submit" class="ops-btn ops-btn-primary">保存修改</button>
+      </div>
+    </form>
+
+    <% if (podcast.filename) { %>
+      <div class="ops-divider"></div>
+      <h3 class="ops-card-title">🎵 当前音频</h3>
+      <audio src="/uploads/<%= podcast.filename %>?v=<%= podcast.created_at?Date.parse(podcast.created_at):'' %>" controls></audio>
+      <p class="ops-muted"><%= podcast.original_name %> (<%= (podcast.file_size/1048576).toFixed(1) %> MB)</p>
+
+      <h3 class="ops-card-title">📤 替换音频</h3>
+      <form action="/ops/content/replace-audio/<%= podcast.id %>" method="POST" enctype="multipart/form-data">
+        <input type="file" name="audio" accept="audio/*" required>
+        <button type="submit" class="ops-btn ops-btn-primary">上传替换</button>
+      </form>
+    <% } %>
+  </div>
+</div>

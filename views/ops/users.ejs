@@ -1,0 +1,46 @@
+<div class="ops-page">
+  <div class="ops-toolbar">
+    <h2 class="ops-h2">👥 用户与创作者</h2>
+    <span class="ops-muted">注册用户 <%= users.length %> 人 · 创作者按播放量排序</span>
+  </div>
+
+  <div class="ops-grid-2">
+    <div class="ops-card">
+      <h3 class="ops-card-title">🏆 创作者排行（Top 20）</h3>
+      <% if (creators && creators.length) { %>
+        <ol class="ops-rank">
+          <% creators.forEach(function(c){ %>
+            <li>
+              <span class="ops-rank-name"><%= c.name %></span>
+              <span class="ops-rank-sub"><%= c.count %> 期</span>
+              <span class="ops-rank-val"><%= c.plays %> 次播放</span>
+            </li>
+          <% }); %>
+        </ol>
+      <% } else { %>
+        <p class="ops-empty">暂无创作者数据</p>
+      <% } %>
+    </div>
+
+    <div class="ops-card">
+      <h3 class="ops-card-title">🧑 注册用户</h3>
+      <% if (users && users.length) { %>
+        <table class="ops-table">
+          <thead><tr><th>用户名</th><th>昵称</th><th>手机</th><th>注册时间</th></tr></thead>
+          <tbody>
+            <% users.forEach(function(u){ %>
+              <tr>
+                <td><%= u.username %></td>
+                <td><%= u.nickname || '-' %></td>
+                <td><%= u.phone || '-' %></td>
+                <td class="ops-cell-date"><%= u.created_at ? new Date(u.created_at).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'}).replace(/\//g,'-') : '-' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <p class="ops-empty">暂无注册用户</p>
+      <% } %>
+    </div>
+  </div>
+</div>

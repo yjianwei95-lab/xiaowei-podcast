@@ -1,0 +1,28 @@
+<%
+  // 复用型节目卡片：p 为节目对象；showFav 控制是否显示收藏按钮（默认 true）
+  var _showFav = (typeof showFav === 'undefined') ? true : showFav;
+%>
+<a href="/play/<%= p.uuid %>" class="podcast-card" data-title="<%= (p.title||'').replace(/"/g,'&quot;') %>" data-desc="<%= (p.description||'').replace(/"/g,'&quot;') %>" data-creator="<%= (p.uploader_name||'').replace(/"/g,'&quot;') %>">
+  <% if (p.is_pinned || p.is_featured || p.is_recommended) { %>
+  <div class="card-badges">
+    <% if (p.is_pinned) { %><span class="card-badge badge-pin">📌 置顶</span><% } %>
+    <% if (p.is_featured) { %><span class="card-badge badge-feat">⭐ 精选</span><% } %>
+    <% if (p.is_recommended) { %><span class="card-badge badge-rec">🔝 推荐</span><% } %>
+  </div>
+  <% } %>
+  <div class="card-cover">
+    <span class="card-cover-icon">🎧</span>
+    <% if (_showFav) { %>
+    <button class="card-fav" data-uuid="<%= p.uuid %>" data-title="<%= (p.title||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') %>" aria-label="收藏">🤍</button>
+    <% } %>
+  </div>
+  <div class="card-body">
+    <h3><%= p.title %></h3>
+    <p class="card-desc"><%= p.description ? p.description.slice(0, 80) + (p.description.length > 80 ? '...' : '') : '暂无描述' %></p>
+    <div class="card-meta">
+      <span>👤 <%= p.uploader_name %></span>
+      <span>▶️ <%= p.play_count %> 次</span>
+      <span>📅 <%= new Date(p.created_at).toLocaleDateString('zh-CN', {timeZone:'Asia/Shanghai'}).replace(/\//g, '-') %></span>
+    </div>
+  </div>
+</a>

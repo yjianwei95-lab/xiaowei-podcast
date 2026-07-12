@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>运营账号登录 · 小伟播客</title>
+  <link rel="stylesheet" href="/ops/css/ops.css">
+</head>
+<body class="ops-login-body">
+  <div class="ops-login-card">
+    <div class="ops-login-logo">🛠️ 小伟播客 · 运营系统</div>
+    <h1>运营账号登录</h1>
+    <% if (typeof flash !== 'undefined' && flash) { %>
+      <div class="ops-flash ops-<%= flash.category %>"><%= flash.message %></div>
+    <% } %>
+    <% if (typeof dbOk !== 'undefined' && !dbOk) { %>
+      <div class="ops-banner">⚠️ 数据库未连接，无法登录。请确认 Supabase 环境变量已配置。</div>
+    <% } %>
+    <form method="POST" class="ops-login-form">
+      <label for="username">账号</label>
+      <input type="text" id="username" name="username" required autocomplete="username">
+      <label for="password">密码</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password">
+      <button type="submit" class="ops-btn ops-btn-primary ops-btn-block">登 录</button>
+    </form>
+    <p class="ops-login-tip">运营账号独立于前台用户，仅用于内容运营管理。</p>
+  </div>
+</body>
+</html>
