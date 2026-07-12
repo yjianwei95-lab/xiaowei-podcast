@@ -2,7 +2,11 @@ node_modules/
 *.db
 *.log
 public/lib/
-uploads/.gitkeep
+uploads/*
+!uploads/.gitkeep
+
+# 可执行文件（Cloudflare 隧道等开发工具，非源码）
+*.exe
 
 # 密钥 / 环境变量（含 Supabase service_role key 与 Access Token，切勿提交）
 .env
