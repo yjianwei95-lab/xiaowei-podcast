@@ -299,19 +299,27 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 诊断路由（含 Session 状态）
+// 诊断路由（含 Session 状态 + Cookie 连通性自测）
 app.get('/debug', (req, res) => {
   try {
-    const episodes = dbAll('SELECT uuid, title, status FROM episodes LIMIT 3');
-    res.json({
-      db: 'sqlite',
-      dbPath: process.env.DB_PATH || 'data.db',
-      episodes: { count: episodes.length, first: episodes[0] ? episodes[0].title : null },
-      users: dbGet('SELECT COUNT(*) AS c FROM users')?.c || 0,
-      env: { QQ_EMAIL: process.env.QQ_EMAIL ? '已设置' : '(未设置)', PORT: process.env.PORT || '(默认3000)' },
-      session: req.session.userId ? { userId: req.session.userId, username: req.session.username, nickname: req.session.nickname } : null,
-      sessionId: req.sessionID || '(无)',
-      cookieHeader: req.headers.cookie ? '(有cookie)' : '(无cookie)'
+    // 自测：每访问一次给 session 计数 +1，刷新两次看是否递增 → 判断 Cookie 是否回传
+    req.session._debugHit = (req.session._debugHit || 0) + 1;
+    req.session.save(function() {
+      const episodes = dbAll('SELECT uuid, title, status FROM episodes LIMIT 3');
+      res.json({
+        db: 'sqlite',
+        dbPath: process.env.DB_PATH || 'data.db',
+        episodes: { count: episodes.length, first: episodes[0] ? episodes[0].title : null },
+        users: dbGet('SELECT COUNT(*) AS c FROM users')?.c || 0,
+        env: { QQ_EMAIL: process.env.QQ_EMAIL ? '已设置' : '(未设置)', PORT: process.env.PORT || '(默认3000)' },
+        cookieTest: {
+          debugHit: req.session._debugHit,
+          tip: '连续刷新两次，若 debugHit 从 1→2→3 说明 Cookie 正常；若一直显示 1 说明浏览器没把 Cookie 传回来（Cloud Studio 代理问题）'
+        },
+        session: req.session.userId ? { userId: req.session.userId, username: req.session.username, nickname: req.session.nickname } : null,
+        sessionId: req.sessionID || '(无)',
+        cookieHeader: req.headers.cookie ? '(有cookie)' : '(无cookie)'
+      });
     });
   } catch (e) {
     res.json({ db: 'sqlite', error: e.message });
