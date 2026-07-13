@@ -70,6 +70,8 @@
     document.body.classList.add('is-app');
   }
   </script>
+  <!-- 当前 sessionId（Cookie 被吞时前端靠它恢复登录态） -->
+  <script>window.__SID__ = '<%= (typeof sid !== "undefined" && sid) ? sid : "" %>';</script>
   <nav class="navbar">
     <div class="container">
       <a href="/" class="logo">🎙️ 小伟播客</a>
@@ -392,5 +394,60 @@
   })();
   </script>
 
+  <!-- session 兜底：Cookie 不可用时用 sid 维持登录态（Cloud Studio 预览/iframe） -->
+  <script>
+  (function(){
+    var SID = new URLSearchParams(location.search).get('sid') || window.__SID__ || localStorage.getItem('xw_sid') || '';
+    if (!SID) return;
+    localStorage.setItem('xw_sid', SID);
+    // 把 sid 写回当前 URL，保证手动刷新也能保持登录
+    if (!new URLSearchParams(location.search).get('sid')) {
+      history.replaceState(null, '', location.pathname + '?sid=' + encodeURIComponent(SID));
+    }
+    // 拦截同域链接点击，追加 sid
+    document.addEventListener('click', function(e){
+      var a = e.target.closest && e.target.closest('a');
+      if (!a) return;
+      var href = a.getAttribute('href') || '';
+      if (!href || href.charAt(0) === '#' || a.target === '_blank' || href.indexOf('sid=') !== -1) return;
+      if (href.indexOf('://') !== -1 && href.indexOf(location.origin) !== 0) return;
+      try {
+        var u = new URL(href, location.origin);
+        if (u.origin !== location.origin) return;
+        u.searchParams.set('sid', SID);
+        a.setAttribute('href', u.pathname + u.search + u.hash);
+      } catch(_){}
+    }, true);
+    // 表单提交追加隐藏 sid
+    document.addEventListener('submit', function(e){
+      var f = e.target;
+      if (!f || f.tagName !== 'FORM') return;
+      if (f.method && f.method.toUpperCase() === 'GET') return;
+      if (f.querySelector('input[name="sid"]')) return;
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = 'sid'; inp.value = SID;
+      f.appendChild(inp);
+    }, true);
+    // fetch / XHR 带 sid
+    var origFetch = window.fetch;
+    if (origFetch) {
+      window.fetch = function(url, opts){
+        opts = opts || {};
+        opts.headers = opts.headers || {};
+        if (!(opts.headers instanceof Headers)) opts.headers = new Headers(opts.headers);
+        opts.headers.set('x-sid', SID);
+        return origFetch.call(window, url, opts);
+      };
+    }
+    var origOpen = XMLHttpRequest.prototype.open;
+    if (origOpen) {
+      XMLHttpRequest.prototype.open = function(method, url){
+        var r = origOpen.apply(this, arguments);
+        try { this.setRequestHeader('x-sid', SID); } catch(_){}
+        return r;
+      };
+    }
+  })();
+  </script>
 </body>
 </html>

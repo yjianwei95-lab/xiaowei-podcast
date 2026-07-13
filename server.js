@@ -175,9 +175,11 @@ function localNow() {
 function renderWithLayout(req, res, template, data = {}) {
   const isAdmin = template.startsWith('admin/');
   const layoutName = isAdmin ? 'admin/layout' : 'layout';
+  // 把当前 sessionId 透传给前端，作为 Cookie 被吞时的兜底（Cloud Studio 预览/iframe）
+  const sid = req.sessionID || null;
   res.render(template, { ...data, session: req.session }, (err, html) => {
     if (err) return res.status(500).send('渲染错误: ' + err.message);
-    res.render(layoutName, { title: data.title || '小伟播客', flash: data.flash || null, session: req.session, content: html });
+    res.render(layoutName, { title: data.title || '小伟播客', flash: data.flash || null, session: req.session, sid, content: html });
   });
 }
 
@@ -275,7 +277,26 @@ const sessionStore = new SqliteSessionStore({ ttl: 7 * 24 * 60 * 60 * 1000 }); /
 // 用宽松的 cookie 策略确保登录态正常
 app.set('trust proxy', 1);
 console.log('[Session] 使用 SQLite 存储Session（重启不丢失登录态）');
+
+// 自定义 cookie 名称，便于在代理/iframe 环境下用 URL/Header 兜底恢复登录态
+const SID_COOKIE = 'xiaowei.sid';
+
+// 登录态兜底：Cloud Studio 预览/iframe 会吞掉 Cookie，导致刷新掉登录。
+// 若请求没带 Cookie，但 URL ?sid= 或请求头 x-sid 带了 sessionId，则注入同名 Cookie 头，
+// 让 express-session 正常识别登录态（前端会自动把 sid 追加到链接/请求里）。
+app.use((req, res, next) => {
+  if (!req.headers.cookie) {
+    const sid = req.query.sid || req.get('x-sid');
+    // 允许签名 cookie 值（含 . : + / = 等字符）
+    if (typeof sid === 'string' && /^[A-Za-z0-9._:+/=-]{8,}$/.test(sid)) {
+      req.headers.cookie = SID_COOKIE + '=' + sid;
+    }
+  }
+  next();
+});
+
 app.use(session({
+  name: SID_COOKIE,
   store: sessionStore,
   secret: process.env.SESSION_SECRET || 'xiaowei-podcast-fixed-secret-2026',
   resave: false,
