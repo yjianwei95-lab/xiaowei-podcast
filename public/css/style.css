@@ -843,15 +843,15 @@ a:focus-visible {
 .edit-form { display: flex; flex-direction: column; gap: 20px; }
 .form-actions { display: flex; gap: 12px; padding-top: 8px; }
 
-/* ─── 手机号登录 ────────────────────── */
-.phone-login-page {
+/* ─── 邮箱登录 ────────────────────── */
+.email-login-page {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: calc(100vh - 200px);
   padding: 20px;
 }
-.phone-login-card {
+.email-login-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -862,80 +862,57 @@ a:focus-visible {
   position: relative;
   overflow: hidden;
 }
-.phone-login-card::before {
+.email-login-card::before {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 3px;
   background: linear-gradient(90deg, var(--accent), var(--accent2));
 }
-.phone-login-header {
+.email-login-header {
   text-align: center;
   margin-bottom: 28px;
 }
-.phone-icon {
+.email-icon {
   font-size: 3rem;
   display: block;
   margin-bottom: 12px;
 }
-.phone-login-header h1 {
+.email-login-header h1 {
   font-size: 1.5rem;
   font-weight: 700;
   margin-bottom: 6px;
 }
-.phone-subtitle {
+.email-subtitle {
   color: var(--text-muted);
   font-size: 0.85rem;
 }
-.phone-login-form {
+.email-login-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-.phone-input-group {
-  display: flex;
-  align-items: stretch;
+.email-login-form .email-input {
+  width: 100%;
+  padding: 14px 16px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  overflow: hidden;
-  transition: border-color var(--transition), box-shadow var(--transition);
-}
-.phone-input-group:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-.phone-prefix {
-  display: flex;
-  align-items: center;
-  padding: 0 14px;
-  background: rgba(255,255,255,0.03);
-  border-right: 1px solid var(--border);
-  font-size: 0.9rem;
-  color: var(--text-muted);
-  font-weight: 500;
-  white-space: nowrap;
-}
-:root[data-theme="light"] .phone-prefix {
-  background: rgba(0,0,0,0.02);
-}
-.phone-input {
-  flex: 1;
-  padding: 12px 14px;
-  background: transparent;
-  border: none;
   color: var(--text);
   font-family: var(--font);
   font-size: 1.05rem;
   outline: none;
-  letter-spacing: 1px;
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
-.phone-input::placeholder {
+.email-login-form .email-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.email-login-form .email-input::placeholder {
   color: var(--text-muted);
   font-size: 0.9rem;
-  letter-spacing: normal;
 }
-.phone-login-btn {
+.email-login-btn {
   margin-top: 4px;
   padding: 14px;
   font-size: 1rem;
@@ -948,23 +925,23 @@ a:focus-visible {
   transition: opacity 0.2s, transform 0.1s, box-shadow var(--transition);
   font-family: inherit;
 }
-.phone-login-btn:hover {
+.email-login-btn:hover {
   opacity: 0.92;
   box-shadow: var(--shadow-glow);
 }
-.phone-login-btn:active {
+.email-login-btn:active {
   transform: scale(0.98);
 }
-.phone-login-btn:disabled {
+.email-login-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
-.phone-login-links {
+.email-login-links {
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
 }
-.phone-login-links .auth-hint {
+.email-login-links .auth-hint {
   margin-top: 0;
 }
 

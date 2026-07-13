@@ -684,55 +684,55 @@ app.post('/audio-editor/upload', (req, res) => {
 });
 
 // ===================================================================
-// 用户认证（手机号/用户名登录）
+// 用户认证（邮箱/用户名登录）
 // ===================================================================
 
-// 手机号登录页面
+// 邮箱登录页面
 app.get('/phone-login', (req, res) => {
   if (req.session.userId || req.session.isAdmin) return res.redirect('/');
-  renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录' });
+  renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录' });
 });
 
 app.post('/phone-login', async (req, res) => {
-  const phone = (req.body.phone || '').trim().replace(/\s/g, '');
+  const email = (req.body.email || '').trim();
   const { password } = req.body;
   const isApi = req.headers['content-type']?.includes('application/json') || req.headers['accept']?.includes('application/json');
 
-  if (!phone) {
-    if (isApi) return res.json({ success: false, message: '请输入手机号' });
-    return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入手机号' } });
+  if (!email) {
+    if (isApi) return res.json({ success: false, message: '请输入邮箱' });
+    return renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录', flash: { category: 'error', message: '请输入邮箱' } });
   }
-  if (!/^1[3-9]\d{9}$/.test(phone)) {
-    if (isApi) return res.json({ success: false, message: '请输入正确的11位手机号' });
-    return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入正确的11位手机号' }, phone });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (isApi) return res.json({ success: false, message: '请输入正确的邮箱地址' });
+    return renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录', flash: { category: 'error', message: '请输入正确的邮箱地址' }, email });
   }
   if (!password) {
     if (isApi) return res.json({ success: false, message: '请输入密码' });
-    return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '请输入密码' }, phone });
+    return renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录', flash: { category: 'error', message: '请输入密码' }, email });
   }
 
   try {
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq('phone', phone)
+      .eq('email', email)
       .single();
 
     if (error || !user) {
-      if (isApi) return res.json({ success: false, message: '该手机号未注册，请先注册' });
-      return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '该手机号未注册，请先注册' }, phone });
+      if (isApi) return res.json({ success: false, message: '该邮箱未注册，请先注册' });
+      return renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录', flash: { category: 'error', message: '该邮箱未注册，请先注册' }, email });
     }
 
     let passwordValid = bcrypt.compareSync(password, user.password_hash);
     if (!passwordValid) {
       if (isApi) return res.json({ success: false, message: '密码错误' });
-      return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '密码错误' }, phone });
+      return renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录', flash: { category: 'error', message: '密码错误' }, email });
     }
 
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.nickname = user.nickname || user.username;
-    req.session.phone = user.phone || '';
+    req.session.email = user.email || '';
 
     req.session.save(function(err) {
       if (err) console.error('[Session Save Error]', err);
@@ -741,11 +741,11 @@ app.post('/phone-login', async (req, res) => {
     });
   } catch (e) {
     if (isApi) return res.json({ success: false, message: '登录失败' });
-    return renderWithLayout(req, res, 'auth/phone-login', { title: '手机号登录', flash: { category: 'error', message: '登录失败' }, phone });
+    return renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录', flash: { category: 'error', message: '登录失败' }, email });
   }
 });
 
-// 用户名/手机号登录
+// 用户名/邮箱登录
 app.get('/login', (req, res) => {
   if (req.session.userId || req.session.isAdmin) return res.redirect('/');
   renderWithLayout(req, res, 'auth/login', { title: '登录' });
@@ -756,15 +756,15 @@ app.post('/login', async (req, res) => {
   const isApi = req.headers['content-type']?.includes('application/json') || req.headers['accept']?.includes('application/json');
 
   if (!identifier) {
-    if (isApi) return res.json({ success: false, message: '请输入手机号或用户名' });
-    return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '请输入手机号或用户名' } });
+    if (isApi) return res.json({ success: false, message: '请输入邮箱或用户名' });
+    return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '请输入邮箱或用户名' } });
   }
 
   try {
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .or(`username.eq.${identifier},phone.eq.${identifier}`)
+      .or(`username.eq.${identifier},email.eq.${identifier}`)
       .single();
 
     if (error || !user) {
@@ -781,7 +781,7 @@ app.post('/login', async (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.nickname = user.nickname || user.username;
-    req.session.phone = user.phone || '';
+    req.session.email = user.email || '';
 
     req.session.save(function(err) {
       if (err) console.error('[Session Save Error]', err);
@@ -798,18 +798,18 @@ app.post('/login', async (req, res) => {
 app.get('/register', (req, res) => renderWithLayout(req, res, 'auth/register', { title: '注册' }));
 
 app.post('/register', async (req, res) => {
-  const { username, phone, password, nickname } = req.body;
+  const { username, email, password, nickname } = req.body;
   const usernameTrim = (username || '').trim();
-  const phoneTrim = (phone || '').trim();
+  const emailTrim = (email || '').trim();
   const isApi = req.headers['content-type']?.includes('application/json') || req.headers['accept']?.includes('application/json');
 
-  if (!usernameTrim && !phoneTrim) {
-    if (isApi) return res.json({ success: false, message: '请填写手机号或用户名' });
-    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请填写手机号或用户名' } });
+  if (!usernameTrim && !emailTrim) {
+    if (isApi) return res.json({ success: false, message: '请填写邮箱或用户名' });
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请填写邮箱或用户名' } });
   }
-  if (phoneTrim && !/^1[3-9]\d{9}$/.test(phoneTrim)) {
-    if (isApi) return res.json({ success: false, message: '请输入正确的11位手机号' });
-    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请输入正确的11位手机号' } });
+  if (emailTrim && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+    if (isApi) return res.json({ success: false, message: '请输入正确的邮箱地址' });
+    return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '请输入正确的邮箱地址' } });
   }
   if (usernameTrim && usernameTrim.length < 2) {
     if (isApi) return res.json({ success: false, message: '用户名至少2个字符' });
@@ -822,11 +822,11 @@ app.post('/register', async (req, res) => {
 
   try {
     // 检查是否已注册
-    if (phoneTrim) {
-      const { data: existingPhone } = await supabase.from('users').select('id').eq('phone', phoneTrim).maybeSingle();
-      if (existingPhone) {
-        if (isApi) return res.json({ success: false, message: '该手机号已被注册' });
-        return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该手机号已被注册' } });
+    if (emailTrim) {
+      const { data: existingEmail } = await supabase.from('users').select('id').eq('email', emailTrim).maybeSingle();
+      if (existingEmail) {
+        if (isApi) return res.json({ success: false, message: '该邮箱已被注册' });
+        return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该邮箱已被注册' } });
       }
     }
     if (usernameTrim) {
@@ -837,14 +837,15 @@ app.post('/register', async (req, res) => {
       }
     }
 
-    const finalUsername = usernameTrim || ('用户' + phoneTrim.slice(-4));
+    // 从邮箱中提取用户名默认值（@ 前的部分）
+    const finalUsername = usernameTrim || ('用户' + emailTrim.split('@')[0].slice(-4));
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const { data: newUser, error } = await supabase
       .from('users')
       .insert([{
         username: finalUsername,
-        phone: phoneTrim || null,
+        email: emailTrim || null,
         password_hash: passwordHash,
         nickname: (nickname || finalUsername).trim(),
       }])
@@ -856,7 +857,7 @@ app.post('/register', async (req, res) => {
     req.session.userId = newUser.id;
     req.session.username = newUser.username;
     req.session.nickname = newUser.nickname;
-    req.session.phone = newUser.phone || '';
+    req.session.email = newUser.email || '';
 
     req.session.save(function(err) {
       if (err) console.error('[Session Save Error]', err);
@@ -877,48 +878,48 @@ app.get('/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
 // ===================================================================
 
 app.post('/api/phone-login', async (req, res) => {
-  const phone = (req.body.phone || '').trim().replace(/\s/g, '');
+  const email = (req.body.email || '').trim();
   const { password } = req.body;
 
-  if (!phone) return res.json({ success: false, message: '请输入手机号' });
-  if (!/^1[3-9]\d{9}$/.test(phone)) return res.json({ success: false, message: '请输入正确的11位手机号' });
+  if (!email) return res.json({ success: false, message: '请输入邮箱' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.json({ success: false, message: '请输入正确的邮箱地址' });
   if (!password) return res.json({ success: false, message: '请输入密码' });
 
   try {
-    const { data: user, error } = await supabase.from('users').select('*').eq('phone', phone).single();
-    if (error || !user) return res.json({ success: false, message: '该手机号未注册，请先注册' });
+    const { data: user, error } = await supabase.from('users').select('*').eq('email', email).single();
+    if (error || !user) return res.json({ success: false, message: '该邮箱未注册，请先注册' });
 
     if (!bcrypt.compareSync(password, user.password_hash)) return res.json({ success: false, message: '密码错误' });
 
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.nickname = user.nickname || user.username;
-    req.session.phone = user.phone || '';
-    return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname || user.username, phone: user.phone || '' } });
+    req.session.email = user.email || '';
+    return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname || user.username, email: user.email || '' } });
   } catch (e) {
     return res.json({ success: false, message: '登录失败' });
   }
 });
 
 app.post('/api/register', async (req, res) => {
-  const { phone, password, nickname } = req.body;
-  const phoneTrim = (phone || '').trim();
+  const { email, password, nickname } = req.body;
+  const emailTrim = (email || '').trim();
   const passwordTrim = (password || '').trim();
 
-  if (!phoneTrim) return res.json({ success: false, message: '请输入手机号' });
-  if (!/^1[3-9]\d{9}$/.test(phoneTrim)) return res.json({ success: false, message: '请输入正确的11位手机号' });
+  if (!emailTrim) return res.json({ success: false, message: '请输入邮箱' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) return res.json({ success: false, message: '请输入正确的邮箱地址' });
   if (!passwordTrim || passwordTrim.length < 4) return res.json({ success: false, message: '密码至少4位' });
 
   try {
-    const { data: existing } = await supabase.from('users').select('id').eq('phone', phoneTrim).maybeSingle();
-    if (existing) return res.json({ success: false, message: '该手机号已被注册' });
+    const { data: existing } = await supabase.from('users').select('id').eq('email', emailTrim).maybeSingle();
+    if (existing) return res.json({ success: false, message: '该邮箱已被注册' });
 
-    const finalUsername = '用户' + phoneTrim.slice(-4);
+    const finalUsername = '用户' + emailTrim.split('@')[0].slice(-4);
     const passwordHash = bcrypt.hashSync(passwordTrim, 10);
 
     const { data: newUser, error } = await supabase
       .from('users')
-      .insert([{ username: finalUsername, phone: phoneTrim, password_hash: passwordHash, nickname: (nickname || finalUsername).trim() }])
+      .insert([{ username: finalUsername, email: emailTrim, password_hash: passwordHash, nickname: (nickname || finalUsername).trim() }])
       .select()
       .single();
 
@@ -927,8 +928,8 @@ app.post('/api/register', async (req, res) => {
     req.session.userId = newUser.id;
     req.session.username = newUser.username;
     req.session.nickname = newUser.nickname;
-    req.session.phone = newUser.phone;
-    return res.json({ success: true, user: { id: newUser.id, username: newUser.username, nickname: newUser.nickname, phone: newUser.phone } });
+    req.session.email = newUser.email;
+    return res.json({ success: true, user: { id: newUser.id, username: newUser.username, nickname: newUser.nickname, email: newUser.email } });
   } catch (e) {
     return res.json({ success: false, message: '注册失败: ' + e.message });
   }
