@@ -115,6 +115,9 @@ a { text-decoration: none; color: inherit; }
 .ops-badge { padding: 2px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .ops-badge.on { background: #ecfdf5; color: #065f46; }
 .ops-badge.off { background: #f3f4f6; color: #6b7280; }
+.ops-badge.pending { background: #fffbeb; color: #b45309; }
+.ops-row-pending td { background: #fffbeb; }
+.ops-row-pending td:first-child { border-left: 3px solid #f59e0b; }
 .ops-empty { text-align: center; color: var(--muted); padding: 26px; }
 .ops-row-off td { opacity: .45; }
 

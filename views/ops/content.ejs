@@ -14,7 +14,7 @@
       </thead>
       <tbody>
         <% if (podcasts && podcasts.length) { podcasts.forEach(function(p){ %>
-          <tr>
+          <tr class="<%= p.status?'':'ops-row-pending' %>">
             <td class="ops-td-title"><%= p.title %></td>
             <td><%= p.uploader_name %></td>
             <td><%= p.play_count %></td>
@@ -24,9 +24,17 @@
             </td>
             <td class="ops-cell-date"><%= p.created_at ? new Date(p.created_at).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'}).replace(/\//g,'-') : '-' %></td>
             <td>
-              <form method="POST" action="/ops/content/toggle/<%= p.id %>" style="display:inline">
-                <button class="ops-btn ops-btn-xs <%= p.status?'ops-on':'ops-off' %>"><%= p.status?'已发布':'已隐藏' %></button>
-              </form>
+              <% if (p.status) { %>
+                <span class="ops-badge on">✅ 已发布</span>
+                <form method="POST" action="/ops/content/toggle/<%= p.id %>" style="display:inline">
+                  <button class="ops-btn ops-btn-xs ops-off">下架</button>
+                </form>
+              <% } else { %>
+                <span class="ops-badge pending">⏳ 待审核</span>
+                <form method="POST" action="/ops/content/toggle/<%= p.id %>" style="display:inline">
+                  <button class="ops-btn ops-btn-xs ops-on">通过审核</button>
+                </form>
+              <% } %>
             </td>
             <td class="ops-td-flags">
               <form method="POST" action="/ops/content/pin/<%= p.id %>" style="display:inline"><button class="ops-chip <%= p.is_pinned?'on':'' %>" title="置顶">📌</button></form>

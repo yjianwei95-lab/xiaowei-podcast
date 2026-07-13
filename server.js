@@ -583,7 +583,7 @@ app.post('/upload', (req, res) => {
           uploader_ip: getClientIP(req),
           uploader_agent: req.headers['user-agent'] || '',
           play_count: 0,
-          status: 1
+          status: 0
         }])
         .select()
         .single();
@@ -592,7 +592,7 @@ app.post('/upload', (req, res) => {
 
       renderWithLayout(req, res, 'upload', {
         title: '上传成功',
-        flash: { category: 'success', message: `🎉 上传成功！《${title.trim()}》已发布` },
+        flash: { category: 'success', message: `✅ 提交成功！《${title.trim()}》已送审，审核通过后将公开展示` },
         uploaded: { uuid: episode.uuid, title: title.trim() },
         req
       });
@@ -649,13 +649,13 @@ app.post('/api/upload', (req, res) => {
           uploader_ip: getClientIP(req),
           uploader_agent: req.headers['user-agent'] || '',
           play_count: 0,
-          status: 1
+          status: 0
         }])
         .select()
         .single();
 
       if (dbError) throw dbError;
-      res.json({ success: true, uuid: episode.uuid, title: title.trim() });
+      res.json({ success: true, pending: true, uuid: episode.uuid, title: title.trim(), message: '已送审，审核通过后将公开展示' });
     } catch (e) {
       console.error('API上传错误:', e.message);
       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);

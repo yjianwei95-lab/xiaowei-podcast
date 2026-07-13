@@ -4,7 +4,7 @@
   "description": "小伟播客 - 声音文件分享平台",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node start-all.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
