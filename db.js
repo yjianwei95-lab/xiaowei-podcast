@@ -155,6 +155,8 @@ function SqliteSessionStore(options) {
   }, this._checkInterval);
   if (this._timer.unref) this._timer.unref();
 }
+// express-session 要求 store 有 .on() 方法（EventEmitter 风格）
+SqliteSessionStore.prototype.on = function () {}; // no-op
 SqliteSessionStore.prototype.get = function (sid, cb) {
   try {
     const row = db.prepare('SELECT sess FROM sessions WHERE sid = ? AND expired > ?').get(sid, Date.now());
