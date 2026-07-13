@@ -2,10 +2,11 @@ node_modules
 npm-debug.log
 .git
 .gitignore
-.DS_Store
-podcast.db
+.env
+*.db
+*.db-wal
+*.db-shm
 uploads
-*.log
-cloudflared.exe
-tunnel.log
-test_data.js
+.cloudstudio
+.cloudbaserc.json
+generated-images

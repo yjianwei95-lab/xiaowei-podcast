@@ -26,6 +26,8 @@ const { EdgeTTS } = require('edge-tts-universal');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// 线上部署（如 Hugging Face）可设 AUTO_APPROVE=1 让上传直接公开，跳过人工审核
+const DEFAULT_STATUS = process.env.AUTO_APPROVE === '1' ? 1 : 0;
 
 // 本地 SQLite 数据层（见 db.js，零外网依赖，Cloud Studio 工作区自包含）
 // 音频改为本地 uploads/ 目录提供，不再依赖任何外部数据库
@@ -487,9 +489,9 @@ app.post('/upload', (req, res) => {
       // 插入数据库记录（待审核）
       const uuid = crypto.randomUUID();
       const info = dbRun(`INSERT INTO episodes (uuid, title, description, filename, original_name, file_size, uploader_name, uploader_email, uploader_ip, uploader_agent, user_id, play_count, status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0)`,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         uuid, title.trim(), (description || '').trim(), req.file.filename, req.file.originalname, req.file.size,
-        uploaderName, uploaderEmail, getClientIP(req), req.headers['user-agent'] || '', req.session.userId);
+        uploaderName, uploaderEmail, getClientIP(req), req.headers['user-agent'] || '', req.session.userId, 0, DEFAULT_STATUS);
       const episode = dbGet('SELECT * FROM episodes WHERE id = ?', info.lastInsertRowid);
 
       renderWithLayout(req, res, 'upload', {
@@ -530,9 +532,9 @@ app.post('/api/upload', (req, res) => {
       const uploaderEmail = (req.session.email || '').trim();
       const uuid = crypto.randomUUID();
       const info = dbRun(`INSERT INTO episodes (uuid, title, description, filename, original_name, file_size, uploader_name, uploader_email, uploader_ip, uploader_agent, user_id, play_count, status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0)`,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         uuid, title.trim(), (description || '').trim(), req.file.filename, req.file.originalname, req.file.size,
-        uploaderName, uploaderEmail, getClientIP(req), req.headers['user-agent'] || '', req.session.userId);
+        uploaderName, uploaderEmail, getClientIP(req), req.headers['user-agent'] || '', req.session.userId, 0, DEFAULT_STATUS);
       const episode = dbGet('SELECT * FROM episodes WHERE id = ?', info.lastInsertRowid);
       res.json({ success: true, pending: true, uuid: episode.uuid, title: title.trim(), message: '已送审，审核通过后将公开展示' });
     } catch (e) {
