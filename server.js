@@ -3,6 +3,7 @@ const http = require('http');
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const mailer = require('./mailer');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const ws = require('ws');
@@ -778,6 +779,11 @@ app.post('/login', async (req, res) => {
       return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '密码错误' } });
     }
 
+    if (!user.email_verified) {
+      if (isApi) return res.json({ success: false, message: '请先到邮箱完成激活后再登录' });
+      return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '请先到邮箱完成激活后再登录' } });
+    }
+
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.nickname = user.nickname || user.username;
@@ -837,9 +843,12 @@ app.post('/register', async (req, res) => {
       }
     }
 
-    // 从邮箱中提取用户名默认值（@ 前的部分）
     const finalUsername = usernameTrim || ('用户' + emailTrim.split('@')[0].slice(-4));
     const passwordHash = bcrypt.hashSync(password, 10);
+
+    // 生成邮箱激活 token（24 小时有效）
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
     const { data: newUser, error } = await supabase
       .from('users')
@@ -848,26 +857,69 @@ app.post('/register', async (req, res) => {
         email: emailTrim || null,
         password_hash: passwordHash,
         nickname: (nickname || finalUsername).trim(),
+        email_verified: false,
+        verification_token: verificationToken,
+        verification_expires: verificationExpires,
       }])
       .select()
       .single();
 
     if (error) throw error;
 
-    req.session.userId = newUser.id;
-    req.session.username = newUser.username;
-    req.session.nickname = newUser.nickname;
-    req.session.email = newUser.email || '';
+    // 发送激活邮件（失败仅告警，不阻断注册；用户可在登录页重发）
+    if (emailTrim) {
+      try {
+        const verifyUrl = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;
+        await mailer.sendVerificationEmail(emailTrim, verifyUrl);
+      } catch (mailErr) {
+        console.error('[注册] 发送激活邮件失败:', mailErr.message);
+      }
+    }
 
-    req.session.save(function(err) {
-      if (err) console.error('[Session Save Error]', err);
-      if (isApi) return res.json({ success: true, user: { id: newUser.id, username: newUser.username, nickname: newUser.nickname } });
-      return res.redirect('/');
-    });
+    // 注册成功但不自动登录，引导用户去邮箱激活
+    if (isApi) return res.json({ success: true, needVerify: true, email: emailTrim, message: '注册成功，请前往邮箱完成激活' });
+    return renderWithLayout(req, res, 'auth/register-success', { title: '注册成功', email: emailTrim });
   } catch (e) {
     console.error('注册错误:', e.message);
     if (isApi) return res.json({ success: false, message: '注册失败: ' + e.message });
     return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '注册失败: ' + e.message } });
+  }
+});
+
+// 邮箱激活
+app.get('/verify-email', async (req, res) => {
+  const token = (req.query.token || '').trim();
+  if (!token) {
+    return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活链接无效。' });
+  }
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('verification_token', token)
+      .single();
+
+    if (error || !user) {
+      return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活链接无效或已使用。' });
+    }
+    if (user.verification_expires && new Date(user.verification_expires) < new Date()) {
+      return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活链接已过期，请重新注册或在登录页获取新链接。' });
+    }
+    if (user.email_verified) {
+      return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: true, message: '该邮箱已激活，直接登录即可。' });
+    }
+
+    const { error: updErr } = await supabase
+      .from('users')
+      .update({ email_verified: true, verification_token: null, verification_expires: null })
+      .eq('id', user.id);
+
+    if (updErr) throw updErr;
+
+    return renderWithLayout(req, res, 'auth/verify-result', { title: '激活成功', success: true, message: '邮箱已成功激活，现在可以登录了。' });
+  } catch (e) {
+    console.error('激活错误:', e.message);
+    return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活失败，请稍后重试。' });
   }
 });
 
@@ -890,6 +942,7 @@ app.post('/api/phone-login', async (req, res) => {
     if (error || !user) return res.json({ success: false, message: '该邮箱未注册，请先注册' });
 
     if (!bcrypt.compareSync(password, user.password_hash)) return res.json({ success: false, message: '密码错误' });
+    if (!user.email_verified) return res.json({ success: false, message: '请先到邮箱完成激活后再登录' });
 
     req.session.userId = user.id;
     req.session.username = user.username;
@@ -916,20 +969,33 @@ app.post('/api/register', async (req, res) => {
 
     const finalUsername = '用户' + emailTrim.split('@')[0].slice(-4);
     const passwordHash = bcrypt.hashSync(passwordTrim, 10);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
     const { data: newUser, error } = await supabase
       .from('users')
-      .insert([{ username: finalUsername, email: emailTrim, password_hash: passwordHash, nickname: (nickname || finalUsername).trim() }])
+      .insert([{
+        username: finalUsername,
+        email: emailTrim,
+        password_hash: passwordHash,
+        nickname: (nickname || finalUsername).trim(),
+        email_verified: false,
+        verification_token: verificationToken,
+        verification_expires: verificationExpires,
+      }])
       .select()
       .single();
 
     if (error) throw error;
 
-    req.session.userId = newUser.id;
-    req.session.username = newUser.username;
-    req.session.nickname = newUser.nickname;
-    req.session.email = newUser.email;
-    return res.json({ success: true, user: { id: newUser.id, username: newUser.username, nickname: newUser.nickname, email: newUser.email } });
+    try {
+      const verifyUrl = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;
+      await mailer.sendVerificationEmail(emailTrim, verifyUrl);
+    } catch (mailErr) {
+      console.error('[API注册] 发送激活邮件失败:', mailErr.message);
+    }
+
+    return res.json({ success: true, needVerify: true, email: emailTrim, message: '注册成功，请前往邮箱完成激活' });
   } catch (e) {
     return res.json({ success: false, message: '注册失败: ' + e.message });
   }

@@ -1,0 +1,13 @@
+<div class="email-login-page">
+  <div class="email-login-card">
+    <div class="email-login-header">
+      <span class="email-icon"><%= success ? '✅' : '⚠️' %></span>
+      <h1><%= success ? '邮箱激活成功' : '激活失败' %></h1>
+      <p class="email-subtitle"><%= message %></p>
+    </div>
+
+    <a href="/login" class="email-login-btn" style="display:block;text-align:center;text-decoration:none;margin-top:20px;">
+      <%= success ? '立即登录' : '返回首页' %>
+    </a>
+  </div>
+</div>
