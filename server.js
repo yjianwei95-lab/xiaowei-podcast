@@ -299,7 +299,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 诊断路由
+// 诊断路由（含 Session 状态）
 app.get('/debug', (req, res) => {
   try {
     const episodes = dbAll('SELECT uuid, title, status FROM episodes LIMIT 3');
@@ -308,7 +308,10 @@ app.get('/debug', (req, res) => {
       dbPath: process.env.DB_PATH || 'data.db',
       episodes: { count: episodes.length, first: episodes[0] ? episodes[0].title : null },
       users: dbGet('SELECT COUNT(*) AS c FROM users')?.c || 0,
-      env: { QQ_EMAIL: process.env.QQ_EMAIL ? '已设置' : '(未设置)', PORT: process.env.PORT || '(默认3000)' }
+      env: { QQ_EMAIL: process.env.QQ_EMAIL ? '已设置' : '(未设置)', PORT: process.env.PORT || '(默认3000)' },
+      session: req.session.userId ? { userId: req.session.userId, username: req.session.username, nickname: req.session.nickname } : null,
+      sessionId: req.sessionID || '(无)',
+      cookieHeader: req.headers.cookie ? '(有cookie)' : '(无cookie)'
     });
   } catch (e) {
     res.json({ db: 'sqlite', error: e.message });
@@ -598,9 +601,10 @@ app.post('/login', async (req, res) => {
       return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '密码错误' } });
     }
 
+    // 邮箱验证：已激活直接通过；未激活也允许登录（仅警告）
+    // 生产环境可改为强制要求 email_verified === 1
     if (!user.email_verified) {
-      if (isApi) return res.json({ success: false, message: '请先到邮箱完成激活后再登录' });
-      return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '请先到邮箱完成激活后再登录' } });
+      console.warn(`[Login] 用户 ${user.username} 邮箱未验证，允许登录（宽松模式）`);
     }
 
     req.session.userId = user.id;
@@ -738,7 +742,8 @@ app.post('/api/phone-login', async (req, res) => {
     if (!user) return res.json({ success: false, message: '该邮箱未注册，请先注册' });
 
     if (!bcrypt.compareSync(password, user.password_hash)) return res.json({ success: false, message: '密码错误' });
-    if (!user.email_verified) return res.json({ success: false, message: '请先到邮箱完成激活后再登录' });
+    // 邮箱未验证也允许登录（宽松模式）
+    if (!user.email_verified) console.warn(`[API Login] 用户 ${user.username} 邮箱未验证，允许登录`);
 
     req.session.userId = user.id;
     req.session.username = user.username;
