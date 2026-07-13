@@ -81,6 +81,8 @@
         <a href="/audio-editor" style="color:#FFD700;font-weight:bold">🎵 音频编辑</a>
         <% if (typeof session !== 'undefined' && session && (session.loggedIn || session.isAdmin || session.userId)) { %>
           <span class="nav-user">👤 <%= session.nickname || session.phone || session.username || '用户' %></span>
+          <a href="/my">📁 我的作品</a>
+          <a href="/profile">✏️ 编辑资料</a>
           <% if (session.isAdmin || session.loggedIn) { %>
           <a href="/ops" style="color:#FFD700">🔧 运营</a>
           <% } %>
