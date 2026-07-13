@@ -134,6 +134,11 @@ function parseTags(raw) {
 
 // ============ SQLite Session Store（重启不丢登录态）============
 // 实现express-session的Store接口，session数据存入sessions表，服务重启后自动恢复。
+// 需要 express-session 的 Store 基类（正确继承才能拿到 Session 对象的方法）
+const session = require('express-session');
+const Store = session.Store;
+const util = require('util');
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS sessions (
   sid    TEXT PRIMARY KEY,
@@ -143,35 +148,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
 `);
 
+// 继承 express-session.Store（基类继承自 EventEmitter，自带 .on()，
+// 且提供 createSession() 生成带有 save/reload/destroy/touch 方法的合法 Session 对象）
 function SqliteSessionStore(options) {
-  this._ttlMs = (options && options.ttl) || 86400000; // 默认7天(ms)
-  this._checkInterval = (options && options.checkPeriod) || 3600000;
-  // 定期清理过期 session（每小时）
+  Store.call(this, options);
+  options = options || {};
+  this._ttlMs = options.ttl || (7 * 24 * 60 * 60 * 1000); // 默认7天(ms)
   const self = this;
   this._timer = setInterval(function () {
     try {
       db.prepare('DELETE FROM sessions WHERE expired <= ?').run(Date.now());
     } catch (_) {}
-  }, this._checkInterval);
-  if (this._timer.unref) this._timer.unref();
+  }, options.checkPeriod || 3600000);
+  if (this._timer && this._timer.unref) this._timer.unref();
 }
-// express-session 要求 store 有 .on() 方法（EventEmitter 风格）
-SqliteSessionStore.prototype.on = function () {}; // no-op
-SqliteSessionStore.prototype.createSession = function (req, sess) {
-  // 返回一个新的 session 对象，合并默认 cookie 配置
-  return {
-    cookie: {
-      originalMaxAge: this._ttlMs,
-      maxAge: this._ttlMs,
-      expires: new Date(Date.now() + this._ttlMs),
-      httpOnly: true,
-      path: '/',
-      sameSite: 'lax',
-      secure: false
-    },
-    ...(sess || {})
-  };
-};
+util.inherits(SqliteSessionStore, Store);
+
 SqliteSessionStore.prototype.get = function (sid, cb) {
   try {
     const row = db.prepare('SELECT sess FROM sessions WHERE sid = ? AND expired > ?').get(sid, Date.now());
@@ -180,7 +172,8 @@ SqliteSessionStore.prototype.get = function (sid, cb) {
 };
 SqliteSessionStore.prototype.set = function (sid, sess, cb) {
   try {
-    const expires = Date.now() + (sess.cookie.maxAge || this._ttlMs);
+    const maxAge = (sess && sess.cookie && sess.cookie.maxAge) || this._ttlMs;
+    const expires = Date.now() + maxAge;
     db.prepare('INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)').run(
       sid, JSON.stringify(sess), expires
     );
@@ -193,10 +186,9 @@ SqliteSessionStore.prototype.destroy = function (sid, cb) {
 };
 SqliteSessionStore.prototype.touch = function (sid, sess, cb) {
   try {
-    const expires = Date.now() + (sess.cookie.maxAge || this._ttlMs);
-    db.prepare('UPDATE sessions SET sess = ?, expired = ? WHERE sid = ?').run(
-      JSON.stringify(sess), expires, sid
-    );
+    const maxAge = (sess && sess.cookie && sess.cookie.maxAge) || this._ttlMs;
+    const expires = Date.now() + maxAge;
+    db.prepare('UPDATE sessions SET expired = ? WHERE sid = ?').run(expires, sid);
     if (cb) cb(null);
   } catch (e) { if (cb) cb(e); }
 };
