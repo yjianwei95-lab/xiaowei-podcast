@@ -572,13 +572,58 @@ app.post('/phone-login', async (req, res) => {
     req.session.save(function(err) {
       if (err) console.error('[Session Save Error]', err);
       if (isApi) return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname } });
-      return res.redirect('/');
+      // 直接渲染首页（不 302 跳转），避免 Cloud Studio 等反向代理丢失 cookie
+      return renderHomeAfterLogin(req, res);
     });
   } catch (e) {
     if (isApi) return res.json({ success: false, message: '登录失败' });
     return renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录', flash: { category: 'error', message: '登录失败' }, email });
   }
 });
+
+// ============ 登录成功后渲染首页（替代 res.redirect('/') 避免代理丢 cookie）============
+function renderHomeAfterLogin(req, res) {
+  try {
+    const podcasts = dbAll('SELECT * FROM episodes WHERE status = 1 ORDER BY created_at DESC') || [];
+    const stats = getStats();
+    const sortedPodcasts = [...podcasts].sort((a, b) => {
+      const pa = a.is_pinned ? 1 : 0, pb = b.is_pinned ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+    const featuredPodcasts = podcasts.filter(p => p.is_featured).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const recommendedPodcasts = podcasts.filter(p => p.is_recommended).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const hotPodcasts = [...podcasts].sort((a, b) => (b.play_count || 0) - (a.play_count || 0)).slice(0, 5);
+    const recentPodcasts = [...podcasts].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 3);
+    const tags = [...new Set(podcasts.flatMap(p =>
+      TAG_KEYWORDS.filter(t => (p.title || '').includes(t) || (p.description || '').includes(t))
+    ))];
+    const creatorCount = {};
+    podcasts.forEach(p => { creatorCount[p.uploader_name] = (creatorCount[p.uploader_name] || 0) + 1; });
+    const topCreators = Object.entries(creatorCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
+    return renderWithLayout(req, res, 'index', {
+      podcasts: sortedPodcasts,
+      featuredPodcasts,
+      recommendedPodcasts,
+      stats,
+      hotPodcasts,
+      recentPodcasts,
+      tags,
+      topCreators,
+      announcements: getAnnouncements(),
+      title: '小伟播客'
+    });
+  } catch (e) {
+    console.error('[renderHomeAfterLogin]', e.message);
+    return renderWithLayout(req, res, 'index', {
+      podcasts: [], featuredPodcasts: [], recommendedPodcasts: [],
+      stats: { totalPodcasts:0, totalPlayed:0, totalVisitors:0, todayVisitors:0, totalSize:0 },
+      hotPodcasts: [], recentPodcasts: [], tags: [], topCreators: [],
+      announcements: getAnnouncements(),
+      title: '小伟播客'
+    });
+  }
+}
 
 // 用户名/邮箱登录
 app.get('/login', (req, res) => {
@@ -623,7 +668,8 @@ app.post('/login', async (req, res) => {
     req.session.save(function(err) {
       if (err) console.error('[Session Save Error]', err);
       if (isApi) return res.json({ success: true, user: { id: user.id, username: user.username, nickname: user.nickname } });
-      return res.redirect('/');
+      // 直接渲染首页（不 302 跳转），避免 Cloud Studio 等反向代理丢失 cookie
+      return renderHomeAfterLogin(req, res);
     });
   } catch (e) {
     if (isApi) return res.json({ success: false, message: '登录失败' });
