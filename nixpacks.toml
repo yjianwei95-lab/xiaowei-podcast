@@ -1,0 +1,11 @@
+# Railway / Nixpacks 构建配置
+# 目的：确保 better-sqlite3 原生模块能正确编译（自带 prebuild，失败则源码编译）
+[phases.setup]
+nixPkgs = ["python3", "gcc", "gcc-c++", "gnumake", "pkg-config"]
+
+[phases.build]
+dependsOn = ["setup"]
+env = { NODE_ENV = "production" }
+
+[start]
+cmd = "node server.js"

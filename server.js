@@ -30,7 +30,8 @@ const PORT = process.env.PORT || 3000;
 // 本地 SQLite 数据层（见 db.js，零外网依赖，Cloud Studio 工作区自包含）
 // 音频改为本地 uploads/ 目录提供，不再依赖任何外部数据库
 
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+// 上传目录支持环境变量（Railway 等容器平台挂持久卷时用，避免重启丢音频）
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // 音频文件扩展名 → Content-Type 映射
