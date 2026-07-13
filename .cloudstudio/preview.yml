@@ -1,0 +1,6 @@
+autoOpen: true
+apps:
+  - port: 3000
+    run: npm install && npm start
+    name: xiaowei-podcast
+    description: 小伟播客
