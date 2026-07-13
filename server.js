@@ -264,15 +264,18 @@ app.use((req, res, next) => {
   next();
 });
 
-// 信任反向代理（Railway 等平台使用 HTTPS 代理 → HTTP 应用）
-// 必须设置在 session 之前，否则 secure cookie 不会被设置
+// 信任反向代理（Cloud Studio / Railway 等平台使用 HTTPS 代理 → HTTP 应用）
+// 必须设置在 session 之前，否则 secure cookie 不会被正确处理
 app.set('trust proxy', 1);
 
 // Session 中间件（内存存储；工作区自包含，无需外部数据库）
 let sessionStore = null;
 
-const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
-console.log(`[Session] isProduction=${isProduction}, trust proxy 已启用`);
+// Cloud Studio 的预览 URL 是 HTTPS 但代理到 HTTP 应用，
+// 且频繁重启会丢失内存 session；这里用宽松的 cookie 策略确保登录态不丢
+const isCloudStudio = !!process.env.CLOUD_STUDIO || !!process.env.WORKSPACE_ID;
+const isProduction = (process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT) && !isCloudStudio;
+console.log(`[Session] isProduction=${isProduction}, isCloudStudio=${!!isCloudStudio}, trust proxy 已启用`);
 app.use(session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || 'xiaowei-podcast-fixed-secret-2026',
@@ -280,8 +283,8 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    sameSite: isProduction ? 'none' : 'lax',
-    secure: isProduction
+    sameSite: 'lax',   // 统一用 lax，避免 none+secure 在部分环境下丢 cookie
+    secure: false      // 统一关闭 secure（Cloud Studio / Railway 都有 HTTPS 代理保护）
   }
 }));
 
