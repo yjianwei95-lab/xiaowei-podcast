@@ -1,0 +1,24 @@
+<div class="profile-edit-page">
+  <h1>📁 我的作品</h1>
+  <% if (typeof error !== 'undefined' && error) { %>
+    <p style="color:#e74c3c;"><%= error %></p>
+  <% } %>
+  <% if (!list || list.length === 0) { %>
+    <p style="color:var(--text-muted,#888);">你还没有上传任何作品。</p>
+    <a href="/upload" class="btn btn-full">去上传第一个作品</a>
+  <% } else { %>
+    <div style="display:flex;flex-direction:column;gap:10px;margin:16px 0;">
+      <% list.forEach(function(p){ %>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border:1px solid var(--border,#eee);border-radius:12px;background:var(--card,#fff);">
+          <div>
+            <div style="font-weight:600;color:var(--text,#222);"><%= p.title %></div>
+            <div style="font-size:12px;color:var(--text-muted,#888);margin-top:4px;">播放 <%= p.play_count %> 次 · <%= p.created_at %></div>
+          </div>
+          <span style="font-size:12px;padding:4px 10px;border-radius:999px;<%= p.statusClass==='ok' ? 'background:#e6f9ed;color:#1a9e4b;' : (p.statusClass==='rejected' ? 'background:#fdeaea;color:#d33;' : 'background:#fff4e0;color:#c77;') %>"><%= p.statusText %></span>
+        </div>
+      <% }); %>
+    </div>
+    <a href="/upload" class="btn btn-full">+ 上传新作品</a>
+  <% } %>
+  <p class="auth-hint"><a href="/">← 返回首页</a></p>
+</div>

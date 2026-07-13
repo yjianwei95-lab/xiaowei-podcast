@@ -256,6 +256,7 @@
       </div>
       <div class="profile-section">
         <% if (typeof session !== 'undefined' && session && (session.loggedIn || session.isAdmin || session.userId)) { %>
+        <a href="/my" class="profile-logout-btn">📁 我的作品</a>
         <a href="/profile" class="profile-logout-btn" style="background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;">✏️ 编辑资料</a>
         <a href="/logout" class="profile-logout-btn">退出登录</a>
         <% } else { %>

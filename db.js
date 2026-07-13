@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS episodes (
   is_pinned         INTEGER NOT NULL DEFAULT 0,
   is_featured       INTEGER NOT NULL DEFAULT 0,
   is_recommended    INTEGER NOT NULL DEFAULT 0,
+  user_id           TEXT DEFAULT '',
   created_at        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   updated_at        TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -107,6 +108,9 @@ CREATE TABLE IF NOT EXISTS announcements (
   created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 `);
+
+// 兼容旧库：已存在的 episodes 表可能没有 user_id 列（升级时自动补齐）
+try { db.exec("ALTER TABLE episodes ADD COLUMN user_id TEXT DEFAULT ''"); } catch (e) { /* 列已存在则忽略 */ }
 
 // ============ 初始化运营后台 admin 账号 ============
 const adminUser = process.env.ADMIN_USERNAME || 'admin';

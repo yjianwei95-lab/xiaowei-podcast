@@ -429,7 +429,10 @@ app.get('/play/:uuid', async (req, res) => {
 });
 
 // 上传页面
-app.get('/upload', (req, res) => renderWithLayout(req, res, 'upload', { title: '上传声音' }));
+app.get('/upload', (req, res) => {
+  if (!req.session.userId) return res.redirect('/phone-login');
+  renderWithLayout(req, res, 'upload', { title: '上传声音' });
+});
 
 // 录音室页面
 app.get('/recorder', (req, res) => renderWithLayout(req, res, 'recorder', { title: '录音室' }));
@@ -439,8 +442,12 @@ app.post('/upload', (req, res) => {
   upload.single('audio')(req, res, async (err) => {
     if (err) return renderWithLayout(req, res, 'upload', { title: '上传声音', flash: { category: 'error', message: err.message } });
     if (!req.file) return renderWithLayout(req, res, 'upload', { title: '上传声音', flash: { category: 'error', message: '请选择文件' } });
+    if (!req.session.userId) {
+      fs.unlinkSync(req.file.path);
+      return renderWithLayout(req, res, 'upload', { title: '上传声音', flash: { category: 'error', message: '请先登录后再上传' } });
+    }
 
-    const { title, description, uploader_name, uploader_email } = req.body;
+    const { title, description } = req.body;
     if (!title || !title.trim()) {
       fs.unlinkSync(req.file.path);
       return renderWithLayout(req, res, 'upload', { title: '上传声音', flash: { category: 'error', message: '请输入标题' } });
@@ -451,12 +458,16 @@ app.post('/upload', (req, res) => {
       const filePath = `${req.file.filename}`;
       console.log('✅ 音频已保存到本地:', filePath);
 
+      // 上传者自动取登录用户身份，绑定到账号（不再由表单自由填写）
+      const uploaderName = (req.session.nickname || req.session.username || '匿名').trim();
+      const uploaderEmail = (req.session.email || '').trim();
+
       // 插入数据库记录（待审核）
       const uuid = crypto.randomUUID();
-      const info = dbRun(`INSERT INTO episodes (uuid, title, description, filename, original_name, file_size, uploader_name, uploader_email, uploader_ip, uploader_agent, play_count, status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,0,0)`,
+      const info = dbRun(`INSERT INTO episodes (uuid, title, description, filename, original_name, file_size, uploader_name, uploader_email, uploader_ip, uploader_agent, user_id, play_count, status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0)`,
         uuid, title.trim(), (description || '').trim(), req.file.filename, req.file.originalname, req.file.size,
-        (uploader_name || '匿名').trim(), (uploader_email || '').trim(), getClientIP(req), req.headers['user-agent'] || '');
+        uploaderName, uploaderEmail, getClientIP(req), req.headers['user-agent'] || '', req.session.userId);
       const episode = dbGet('SELECT * FROM episodes WHERE id = ?', info.lastInsertRowid);
 
       renderWithLayout(req, res, 'upload', {
@@ -478,8 +489,12 @@ app.post('/api/upload', (req, res) => {
   upload.single('audio')(req, res, async (err) => {
     if (err) return res.json({ success: false, message: err.message });
     if (!req.file) return res.json({ success: false, message: '请选择文件' });
+    if (!req.session.userId) {
+      fs.unlinkSync(req.file.path);
+      return res.json({ success: false, message: '请先登录后再上传' });
+    }
 
-    const { title, description, uploader_name, uploader_email } = req.body;
+    const { title, description } = req.body;
     if (!title || !title.trim()) {
       fs.unlinkSync(req.file.path);
       return res.json({ success: false, message: '请输入标题' });
@@ -489,11 +504,13 @@ app.post('/api/upload', (req, res) => {
       const filePath = `${req.file.filename}`;
       console.log('✅ API 音频已保存到本地:', filePath);
 
+      const uploaderName = (req.session.nickname || req.session.username || '匿名').trim();
+      const uploaderEmail = (req.session.email || '').trim();
       const uuid = crypto.randomUUID();
-      const info = dbRun(`INSERT INTO episodes (uuid, title, description, filename, original_name, file_size, uploader_name, uploader_email, uploader_ip, uploader_agent, play_count, status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,0,0)`,
+      const info = dbRun(`INSERT INTO episodes (uuid, title, description, filename, original_name, file_size, uploader_name, uploader_email, uploader_ip, uploader_agent, user_id, play_count, status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0)`,
         uuid, title.trim(), (description || '').trim(), req.file.filename, req.file.originalname, req.file.size,
-        (uploader_name || '匿名').trim(), (uploader_email || '').trim(), getClientIP(req), req.headers['user-agent'] || '');
+        uploaderName, uploaderEmail, getClientIP(req), req.headers['user-agent'] || '', req.session.userId);
       const episode = dbGet('SELECT * FROM episodes WHERE id = ?', info.lastInsertRowid);
       res.json({ success: true, pending: true, uuid: episode.uuid, title: title.trim(), message: '已送审，审核通过后将公开展示' });
     } catch (e) {
@@ -862,6 +879,25 @@ app.get('/profile', (req, res) => {
   const user = dbGet('SELECT id, username, nickname, phone, email FROM users WHERE id = ?', req.session.userId);
   if (!user) return res.redirect('/login');
   renderWithLayout(req, res, 'profile', { title: '编辑资料', user });
+});
+
+// 我的作品（登录用户查看自己上传的节目及审核状态）
+app.get('/my', (req, res) => {
+  if (!req.session.userId) return res.redirect('/phone-login');
+  try {
+    const list = dbAll('SELECT uuid, title, status, play_count, created_at FROM episodes WHERE user_id = ? ORDER BY created_at DESC', req.session.userId);
+    const mapped = (list || []).map(p => ({
+      uuid: p.uuid,
+      title: p.title,
+      play_count: p.play_count || 0,
+      created_at: p.created_at,
+      statusText: p.status === 1 ? '已通过' : (p.status === 2 ? '已拒绝' : '待审核'),
+      statusClass: p.status === 1 ? 'ok' : (p.status === 2 ? 'rejected' : 'pending')
+    }));
+    renderWithLayout(req, res, 'my', { title: '我的作品', list: mapped });
+  } catch (e) {
+    renderWithLayout(req, res, 'my', { title: '我的作品', list: [], error: e.message });
+  }
 });
 
 // 保存资料（昵称/手机/邮箱 + 可选改密码）
