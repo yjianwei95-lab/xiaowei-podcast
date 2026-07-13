@@ -157,6 +157,21 @@ function SqliteSessionStore(options) {
 }
 // express-session 要求 store 有 .on() 方法（EventEmitter 风格）
 SqliteSessionStore.prototype.on = function () {}; // no-op
+SqliteSessionStore.prototype.createSession = function (req, sess) {
+  // 返回一个新的 session 对象，合并默认 cookie 配置
+  return {
+    cookie: {
+      originalMaxAge: this._ttlMs,
+      maxAge: this._ttlMs,
+      expires: new Date(Date.now() + this._ttlMs),
+      httpOnly: true,
+      path: '/',
+      sameSite: 'lax',
+      secure: false
+    },
+    ...(sess || {})
+  };
+};
 SqliteSessionStore.prototype.get = function (sid, cb) {
   try {
     const row = db.prepare('SELECT sess FROM sessions WHERE sid = ? AND expired > ?').get(sid, Date.now());
