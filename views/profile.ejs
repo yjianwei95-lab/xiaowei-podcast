@@ -1,0 +1,59 @@
+<div class="profile-edit-page">
+  <h1>✏️ 编辑资料</h1>
+  <form id="profileForm" class="auth-form">
+    <div class="form-group">
+      <label for="nickname">昵称</label>
+      <input type="text" id="nickname" name="nickname" value="<%= user.nickname || '' %>" placeholder="显示名称" maxlength="20">
+    </div>
+    <div class="form-group">
+      <label for="phone">手机号</label>
+      <input type="text" id="phone" name="phone" value="<%= user.phone || '' %>" placeholder="选填">
+    </div>
+    <div class="form-group">
+      <label for="email">邮箱</label>
+      <input type="email" id="email" name="email" value="<%= user.email || '' %>" placeholder="邮箱">
+    </div>
+    <hr class="form-divider">
+    <p class="form-section-title">修改密码（留空则不修改）</p>
+    <div class="form-group">
+      <label for="currentPassword">当前密码</label>
+      <input type="password" id="currentPassword" name="currentPassword" placeholder="不修改请留空">
+    </div>
+    <div class="form-group">
+      <label for="newPassword">新密码</label>
+      <input type="password" id="newPassword" name="newPassword" placeholder="至少4位">
+    </div>
+    <button type="submit" class="btn btn-full" id="saveBtn">保存</button>
+  </form>
+  <p class="auth-hint"><a href="/">← 返回首页</a></p>
+</div>
+<script>
+document.getElementById('profileForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+  const fd = new FormData(this);
+  const data = Object.fromEntries(fd.entries());
+  try {
+    const resp = await fetch('/api/profile', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const result = await resp.json();
+    if (result.success) {
+      alert('保存成功！');
+      location.reload();
+    } else {
+      alert(result.message || '保存失败');
+    }
+  } catch (err) {
+    alert('网络错误，请重试');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '保存';
+  }
+});
+</script>

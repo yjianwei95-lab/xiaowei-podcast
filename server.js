@@ -856,6 +856,47 @@ app.get('/api/me', async (req, res) => {
   }
 });
 
+// 编辑资料页
+app.get('/profile', (req, res) => {
+  if (!req.session.userId) return res.redirect('/login');
+  const user = dbGet('SELECT id, username, nickname, phone, email FROM users WHERE id = ?', req.session.userId);
+  if (!user) return res.redirect('/login');
+  renderWithLayout(req, res, 'profile', { title: '编辑资料', user });
+});
+
+// 保存资料（昵称/手机/邮箱 + 可选改密码）
+app.post('/api/profile', (req, res) => {
+  if (!req.session.userId) return res.json({ success: false, message: '未登录' });
+  const { nickname, phone, email, currentPassword, newPassword } = req.body;
+  try {
+    const user = dbGet('SELECT * FROM users WHERE id = ?', req.session.userId);
+    if (!user) return res.json({ success: false, message: '用户不存在' });
+
+    // 修改密码（填了新密码才校验）
+    if (newPassword && newPassword.trim()) {
+      if (!currentPassword || !bcrypt.compareSync(currentPassword, user.password_hash)) {
+        return res.json({ success: false, message: '当前密码错误' });
+      }
+      if (newPassword.trim().length < 4) return res.json({ success: false, message: '新密码至少4位' });
+      dbRun('UPDATE users SET password_hash = ? WHERE id = ?', bcrypt.hashSync(newPassword.trim(), 10), user.id);
+    }
+
+    const newNick = (nickname || user.nickname || user.username || '').trim().slice(0, 20) || user.username;
+    const newPhone = (phone || '').trim().slice(0, 20);
+    const newEmail = (email || user.email || '').trim();
+    dbRun('UPDATE users SET nickname = ?, phone = ?, email = ? WHERE id = ?', newNick, newPhone, newEmail, user.id);
+
+    // 同步 session，立即生效
+    req.session.nickname = newNick;
+    req.session.phone = newPhone;
+    req.session.email = newEmail;
+
+    return res.json({ success: true, user: { nickname: newNick, phone: newPhone, email: newEmail } });
+  } catch (e) {
+    return res.json({ success: false, message: '保存失败: ' + e.message });
+  }
+});
+
 // ===================================================================
 // 原生 APP JSON API
 // ===================================================================
