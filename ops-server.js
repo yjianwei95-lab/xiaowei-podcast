@@ -27,7 +27,7 @@ const app = express();
 const PORT = process.env.OPS_PORT || 4000;
 
 // ===== 本地 SQLite 数据层（见 db.js，与播客前端共用）=====
-const { db, dbAll, dbGet, dbRun } = require('./db');
+const { db, dbAll, dbGet, dbRun, SqliteSessionStore } = require('./db');
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -37,9 +37,10 @@ const AUDIO_CONTENT_TYPES = {
   'aac': 'audio/aac', 'flac': 'audio/flac'
 };
 
-// ===== 会话（独立 cookie 名，避免与 3000 冲突）=====
+// ===== 会话（独立 cookie 名，SQLite 存储，重启不丢登录态）=====
 app.use(session({
   name: 'ops.sid',
+  store: new SqliteSessionStore({ ttl: 12 * 60 * 60 * 1000 }), // 12小时
   secret: process.env.OPS_SESSION_SECRET || 'xiaowei-ops-secret-2026',
   resave: false,
   saveUninitialized: false,

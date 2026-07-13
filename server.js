@@ -5,7 +5,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const mailer = require('./mailer');
 const path = require('path');
-const { db, dbAll, dbGet, dbRun, parseTags } = require('./db');
+const { db, dbAll, dbGet, dbRun, parseTags, SqliteSessionStore } = require('./db');
 const { EdgeTTS } = require('edge-tts-universal');
 
 // 极简 .env 加载（不依赖 dotenv；已存在的 process.env 优先）
@@ -268,14 +268,13 @@ app.use((req, res, next) => {
 // 必须设置在 session 之前，否则 secure cookie 不会被正确处理
 app.set('trust proxy', 1);
 
-// Session 中间件（内存存储；工作区自包含，无需外部数据库）
-let sessionStore = null;
+// Session 中间件（SQLite 存储，重启不丢登录态）
+const sessionStore = new SqliteSessionStore({ ttl: 7 * 24 * 60 * 60 * 1000 }); // 7天
 
 // Cloud Studio 的预览 URL 是 HTTPS 但代理到 HTTP 应用，
-// 且频繁重启会丢失内存 session；这里用宽松的 cookie 策略确保登录态不丢
-const isCloudStudio = !!process.env.CLOUD_STUDIO || !!process.env.WORKSPACE_ID;
-const isProduction = (process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT) && !isCloudStudio;
-console.log(`[Session] isProduction=${isProduction}, isCloudStudio=${!!isCloudStudio}, trust proxy 已启用`);
+// 用宽松的 cookie 策略确保登录态正常
+app.set('trust proxy', 1);
+console.log('[Session] 使用 SQLite 存储Session（重启不丢失登录态）');
 app.use(session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || 'xiaowei-podcast-fixed-secret-2026',
@@ -283,8 +282,8 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    sameSite: 'lax',   // 统一用 lax，避免 none+secure 在部分环境下丢 cookie
-    secure: false      // 统一关闭 secure（Cloud Studio / Railway 都有 HTTPS 代理保护）
+    sameSite: 'lax',
+    secure: false
   }
 }));
 

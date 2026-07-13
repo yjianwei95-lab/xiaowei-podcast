@@ -132,4 +132,68 @@ function parseTags(raw) {
   try { return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
 
-module.exports = { db, dbAll, dbGet, dbRun, parseTags };
+// ============ SQLite Session Store（重启不丢登录态）============
+// 实现express-session的Store接口，session数据存入sessions表，服务重启后自动恢复。
+db.exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+  sid    TEXT PRIMARY KEY,
+  sess   TEXT NOT NULL,
+  expired INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_expired ON sessions(expired);
+`);
+
+function SqliteSessionStore(options) {
+  this._ttlMs = (options && options.ttl) || 86400000; // 默认7天(ms)
+  this._checkInterval = (options && options.checkPeriod) || 3600000;
+  // 定期清理过期 session（每小时）
+  const self = this;
+  this._timer = setInterval(function () {
+    try {
+      db.prepare('DELETE FROM sessions WHERE expired <= ?').run(Date.now());
+    } catch (_) {}
+  }, this._checkInterval);
+  if (this._timer.unref) this._timer.unref();
+}
+SqliteSessionStore.prototype.get = function (sid, cb) {
+  try {
+    const row = db.prepare('SELECT sess FROM sessions WHERE sid = ? AND expired > ?').get(sid, Date.now());
+    return cb(null, row ? JSON.parse(row.sess) : null);
+  } catch (e) { return cb(e); }
+};
+SqliteSessionStore.prototype.set = function (sid, sess, cb) {
+  try {
+    const expires = Date.now() + (sess.cookie.maxAge || this._ttlMs);
+    db.prepare('INSERT OR REPLACE INTO sessions (sid, sess, expired) VALUES (?, ?, ?)').run(
+      sid, JSON.stringify(sess), expires
+    );
+    if (cb) cb(null);
+  } catch (e) { if (cb) cb(e); }
+};
+SqliteSessionStore.prototype.destroy = function (sid, cb) {
+  try { db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid); if (cb) cb(null); }
+  catch (e) { if (cb) cb(e); }
+};
+SqliteSessionStore.prototype.touch = function (sid, sess, cb) {
+  try {
+    const expires = Date.now() + (sess.cookie.maxAge || this._ttlMs);
+    db.prepare('UPDATE sessions SET sess = ?, expired = ? WHERE sid = ?').run(
+      JSON.stringify(sess), expires, sid
+    );
+    if (cb) cb(null);
+  } catch (e) { if (cb) cb(e); }
+};
+SqliteSessionStore.prototype.all = function (cb) {
+  try {
+    const rows = db.prepare('SELECT sess FROM sessions WHERE expired > ?').all(Date.now());
+    const result = {};
+    rows.forEach(function (r) {
+      var parsed;
+      try { parsed = JSON.parse(r.sess); } catch (_) { return; }
+      result[r.sid] = parsed;
+    });
+    cb(null, result);
+  } catch (e) { cb(e); }
+};
+
+module.exports = { db, dbAll, dbGet, dbRun, parseTags, SqliteSessionStore };
