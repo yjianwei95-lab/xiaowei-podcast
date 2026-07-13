@@ -5,10 +5,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const mailer = require('./mailer');
 const path = require('path');
-const { createClient } = require('@supabase/supabase-js');
-const ws = require('ws');
-const { Pool } = require('pg');
-const PgSession = require('connect-pg-simple')(session);
+const { db, dbAll, dbGet, dbRun, parseTags } = require('./db');
 const { EdgeTTS } = require('edge-tts-universal');
 
 // 极简 .env 加载（不依赖 dotenv；已存在的 process.env 优先）
@@ -30,24 +27,8 @@ const { EdgeTTS } = require('edge-tts-universal');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Supabase 配置（密钥从环境变量读取，不在代码中硬编码）
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
-
-// 优先使用 service_role key（后端需要写入权限），没有则用 anon key
-const supabaseKey = SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY;
-let supabase = null;
-try {
-  supabase = createClient(SUPABASE_URL, supabaseKey, {
-    realtime: {
-      transport: ws
-    }
-  });
-} catch(e) {
-  console.warn('⚠️ Supabase 初始化失败（环境变量 SUPABASE_URL 未配置？）:', e.message);
-  console.warn('  播客相关功能（首页/上传/播放）不可用，但 TTS 配音仍可正常使用');
-}
+// 本地 SQLite 数据层（见 db.js，零外网依赖，Cloud Studio 工作区自包含）
+// 音频改为本地 uploads/ 目录提供，不再依赖任何外部数据库
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -209,33 +190,19 @@ function requireAdmin(req, res, next) {
 // 统计函数（从 Supabase 读取）
 // ===================================================================
 
-async function getStats() {
+function getStats() {
   try {
-    const { count: totalPodcasts } = await supabase
-      .from('episodes')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 1);
-
-    const { data: podcasts } = await supabase
-      .from('episodes')
-      .select('play_count, file_size')
-      .eq('status', 1);
-
-    const { count: totalVisitors } = await supabase
-      .from('visitors')
-      .select('*', { count: 'exact', head: true });
-
+    const totalPodcasts = dbGet("SELECT COUNT(*) AS c FROM episodes WHERE status = 1")?.c || 0;
+    const podcasts = dbAll('SELECT play_count, file_size FROM episodes WHERE status = 1');
+    const totalVisitors = dbGet('SELECT COUNT(*) AS c FROM visitors')?.c || 0;
     const today = localNow().slice(0, 10);
-    const { count: todayVisitors } = await supabase
-      .from('visitors')
-      .select('*', { count: 'exact', head: true })
-      .gte('visited_at', today + 'T00:00:00+08:00')
-      .lt('visited_at', today + 'T23:59:59+08:00');
-
-    const totalPlayed = podcasts?.reduce((s, p) => s + (p.play_count || 0), 0) || 0;
-    const totalSize = podcasts?.reduce((s, p) => s + (p.file_size || 0), 0) || 0;
-
-    return { totalPodcasts: totalPodcasts || 0, totalPlayed, totalVisitors: totalVisitors || 0, todayVisitors: todayVisitors || 0, totalSize };
+    const todayVisitors = dbGet(
+      'SELECT COUNT(*) AS c FROM visitors WHERE visited_at >= ? AND visited_at <= ?',
+      today + ' 00:00:00', today + ' 23:59:59'
+    )?.c || 0;
+    const totalPlayed = podcasts.reduce((s, p) => s + (p.play_count || 0), 0);
+    const totalSize = podcasts.reduce((s, p) => s + (p.file_size || 0), 0);
+    return { totalPodcasts, totalPlayed, totalVisitors, todayVisitors, totalSize };
   } catch (e) {
     console.error('getStats error:', e.message);
     return { totalPodcasts: 0, totalPlayed: 0, totalVisitors: 0, todayVisitors: 0, totalSize: 0 };
@@ -243,17 +210,10 @@ async function getStats() {
 }
 
 // 公告：优先读数据库 announcements 表（由运营系统管理），无则回退硬编码
-async function getAnnouncements() {
-  if (!supabase) return ANNOUNCEMENTS;
+function getAnnouncements() {
   try {
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('*')
-      .eq('active', true)
-      .order('sort', { ascending: false })
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    if (data && data.length) return data.map(a => ({ id: a.id, text: a.text, date: a.date }));
+    const rows = dbAll('SELECT * FROM announcements WHERE active = 1 ORDER BY sort DESC, created_at DESC');
+    if (rows && rows.length) return rows.map(a => ({ id: a.id, text: a.text, date: a.date }));
     return ANNOUNCEMENTS;
   } catch (e) {
     console.warn('[公告] 读取数据库失败，使用硬编码:', e.message);
@@ -289,6 +249,8 @@ const upload = multer({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+// 上传音频静态服务（替代原 Supabase Storage）
+app.use('/uploads', express.static(UPLOAD_DIR));
 // CORS 中间件（支持安卓 APP 跨域请求）
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -306,28 +268,8 @@ app.use((req, res, next) => {
 // 必须设置在 session 之前，否则 secure cookie 不会被设置
 app.set('trust proxy', 1);
 
-// Session 中间件
+// Session 中间件（内存存储；工作区自包含，无需外部数据库）
 let sessionStore = null;
-let pgPool = null;
-if (process.env.DATABASE_URL) {
-  try {
-    pgPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-    sessionStore = new PgSession({ pool: pgPool, tableName: 'session', createTableIfMissing: true });
-    console.log('[Session] 使用 PostgreSQL 持久化存储');
-    // 数据库迁移：添加 custom_tags 字段
-    pgPool.query(`
-      DO $$ BEGIN
-        ALTER TABLE episodes ADD COLUMN custom_tags TEXT[] DEFAULT '{}';
-      EXCEPTION WHEN duplicate_column THEN NULL;
-      END $$;
-    `).then(() => console.log('[Migration] custom_tags 字段已就绪'))
-      .catch(e => console.log('[Migration] 跳过（可能表尚未创建）:', e.message));
-  } catch (e) {
-    console.error('[Session] PostgreSQL 连接失败，回退到内存存储:', e.message);
-  }
-} else {
-  console.log('[Session] DATABASE_URL 未设置，使用内存存储（生产环境建议配置 PostgreSQL）');
-}
 
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
 console.log(`[Session] isProduction=${isProduction}, trust proxy 已启用`);
@@ -356,54 +298,27 @@ app.get('/health', (req, res) => {
 });
 
 // 诊断路由
-app.get('/debug', async (req, res) => {
-  const diagnostics = {
-    env: {
-      SUPABASE_URL: SUPABASE_URL ? SUPABASE_URL.replace(/\.co.*/, '.co') + '...' : '(未设置)',
-      SUPABASE_SERVICE_KEY: SUPABASE_SERVICE_KEY ? '已设置 (长度:' + SUPABASE_SERVICE_KEY.length + ')' : '(未设置)',
-      SUPABASE_ANON_KEY: SUPABASE_ANON_KEY ? '已设置 (长度:' + SUPABASE_ANON_KEY.length + ')' : '(未设置)',
-      supabaseKey: supabaseKey ? '已设置 (长度:' + supabaseKey.length + ')' : '(未设置)',
-      PORT: process.env.PORT || '(默认3000)'
-    },
-    connection: null,
-    episodes: null,
-    error: null
-  };
+app.get('/debug', (req, res) => {
   try {
-    const { data: episodes, error } = await supabase.from('episodes').select('*').limit(3);
-    if (error) {
-      diagnostics.error = error.message;
-      diagnostics.connection = '失败';
-    } else {
-      diagnostics.connection = '成功';
-      diagnostics.episodes = { count: episodes ? episodes.length : 0, first: episodes && episodes[0] ? episodes[0].title : null };
-    }
+    const episodes = dbAll('SELECT uuid, title, status FROM episodes LIMIT 3');
+    res.json({
+      db: 'sqlite',
+      dbPath: process.env.DB_PATH || 'data.db',
+      episodes: { count: episodes.length, first: episodes[0] ? episodes[0].title : null },
+      users: dbGet('SELECT COUNT(*) AS c FROM users')?.c || 0,
+      env: { QQ_EMAIL: process.env.QQ_EMAIL ? '已设置' : '(未设置)', PORT: process.env.PORT || '(默认3000)' }
+    });
   } catch (e) {
-    diagnostics.error = e.message;
-    diagnostics.connection = '异常';
+    res.json({ db: 'sqlite', error: e.message });
   }
-  res.json(diagnostics);
 });
 
-// 音频文件路由（从 Supabase Storage 重定向）
-app.get('/uploads/:filename', (req, res) => {
-  const redirectUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/${req.params.filename}`;
-  res.redirect(302, redirectUrl);
-});
+// 音频文件现已由上面的 express.static('/uploads') 直接提供，无需重定向
 
 // 首页
 app.get('/', async (req, res) => {
   try {
-    const { data: podcasts, error } = await supabase
-      .from('episodes')
-      .select('*')
-      .eq('status', 1)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('【首页Supabase错误】', error.message, error);
-      throw error;
-    }
+    const podcasts = dbAll('SELECT * FROM episodes WHERE status = 1 ORDER BY created_at DESC');
     console.log('【首页查询成功】获取到', podcasts ? podcasts.length : 0, '条节目');
     const stats = await getStats();
 
@@ -476,44 +391,22 @@ app.get('/app', (req, res) => {
 // 播放页面
 app.get('/play/:uuid', async (req, res) => {
   try {
-    const { data: podcast, error } = await supabase
-      .from('episodes')
-      .select('*')
-      .eq('uuid', req.params.uuid)
-      .eq('status', 1)
-      .single();
+    const podcast = dbGet('SELECT * FROM episodes WHERE uuid = ? AND status = 1', req.params.uuid);
+    if (!podcast) return renderWithLayout(req, res, '404', { title: '未找到' });
 
-    if (error || !podcast) return renderWithLayout(req, res, '404', { title: '未找到' });
-
-    // 生成 Supabase Storage 音频 URL（公网可访问）
-    const audioUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/${podcast.filename}`;
+    // 音频文件本地路径
+    const audioUrl = `/uploads/${podcast.filename}`;
 
     // 增加播放次数
-    await supabase
-      .from('episodes')
-      .update({ play_count: (podcast.play_count || 0) + 1 })
-      .eq('uuid', req.params.uuid);
+    dbRun('UPDATE episodes SET play_count = play_count + 1 WHERE uuid = ?', req.params.uuid);
 
     // 记录访客（包含设备信息）
     const deviceInfo = parseUserAgent(req);
-    await supabase
-      .from('visitors')
-      .insert([{
-        episode_uuid: req.params.uuid,
-        ip: getClientIP(req),
-        user_agent: req.headers['user-agent'] || '',
-        referer: req.headers['referer'] || '',
-        device_type: deviceInfo.device_type,
-        os: deviceInfo.os,
-        os_version: deviceInfo.os_version,
-        browser: deviceInfo.browser,
-        browser_version: deviceInfo.browser_version,
-        device_brand: deviceInfo.device_brand,
-        device_model: deviceInfo.device_model,
-        screen_resolution: deviceInfo.screen_resolution,
-        language: deviceInfo.language,
-        platform: deviceInfo.platform
-      }]);
+    dbRun(`INSERT INTO visitors (episode_uuid, ip, user_agent, referer, device_type, os, os_version, browser, browser_version, device_brand, device_model, screen_resolution, language, platform)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      req.params.uuid, getClientIP(req), req.headers['user-agent'] || '', req.headers['referer'] || '',
+      deviceInfo.device_type, deviceInfo.os, deviceInfo.os_version, deviceInfo.browser, deviceInfo.browser_version,
+      deviceInfo.device_brand, deviceInfo.device_model, deviceInfo.screen_resolution, deviceInfo.language, deviceInfo.platform);
 
     renderWithLayout(req, res, 'player', { podcast, audioUrl, title: podcast.title, req, user: req.session.userId ? { id: req.session.userId, username: req.session.username, nickname: req.session.nickname } : null });
   } catch (e) {
@@ -541,55 +434,17 @@ app.post('/upload', (req, res) => {
     }
 
     try {
-      // 1. 上传音频文件到 Supabase Storage（必须成功）
-      const fileBuffer = fs.readFileSync(req.file.path);
+      // 文件已由 multer 直接保存到 uploads/ 目录，无需再上传到云存储
       const filePath = `${req.file.filename}`;
-      
-      // 根据文件扩展名检测正确的 Content-Type
-      const ext = req.file.originalname.split('.').pop().toLowerCase();
-      const contentType = AUDIO_CONTENT_TYPES[ext] || 'audio/mpeg';
+      console.log('✅ 音频已保存到本地:', filePath);
 
-      const { error: uploadError } = await supabase.storage
-        .from('audio')
-        .upload(filePath, fileBuffer, {
-          contentType: contentType,
-          upsert: false
-        });
-
-      if (uploadError) {
-        console.error('❌ Storage上传失败:', uploadError.message);
-        fs.unlinkSync(req.file.path); // 删除本地临时文件
-        return renderWithLayout(req, res, 'upload', { 
-          title: '上传声音', 
-          flash: { category: 'error', message: '上传到云存储失败：' + uploadError.message } 
-        });
-      }
-
-      // 上传成功，删除本地临时文件
-      fs.unlinkSync(req.file.path);
-      console.log('✅ Storage上传成功:', filePath);
-
-      // 2. 插入数据库记录
-      const { data: episode, error: dbError } = await supabase
-        .from('episodes')
-        .insert([{
-          title: title.trim(),
-          description: (description || '').trim(),
-          filename: req.file.filename,
-          original_name: req.file.originalname,
-          file_size: req.file.size,
-          duration: '',
-          uploader_name: (uploader_name || '匿名').trim(),
-          uploader_email: (uploader_email || '').trim(),
-          uploader_ip: getClientIP(req),
-          uploader_agent: req.headers['user-agent'] || '',
-          play_count: 0,
-          status: 0
-        }])
-        .select()
-        .single();
-
-      if (dbError) throw dbError;
+      // 插入数据库记录（待审核）
+      const uuid = crypto.randomUUID();
+      const info = dbRun(`INSERT INTO episodes (uuid, title, description, filename, original_name, file_size, uploader_name, uploader_email, uploader_ip, uploader_agent, play_count, status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,0,0)`,
+        uuid, title.trim(), (description || '').trim(), req.file.filename, req.file.originalname, req.file.size,
+        (uploader_name || '匿名').trim(), (uploader_email || '').trim(), getClientIP(req), req.headers['user-agent'] || '');
+      const episode = dbGet('SELECT * FROM episodes WHERE id = ?', info.lastInsertRowid);
 
       renderWithLayout(req, res, 'upload', {
         title: '上传成功',
@@ -618,44 +473,15 @@ app.post('/api/upload', (req, res) => {
     }
 
     try {
-      const fileBuffer = fs.readFileSync(req.file.path);
       const filePath = `${req.file.filename}`;
-      const ext = req.file.originalname.split('.').pop().toLowerCase();
-      const contentType = AUDIO_CONTENT_TYPES[ext] || 'audio/mpeg';
+      console.log('✅ API 音频已保存到本地:', filePath);
 
-      const { error: uploadError } = await supabase.storage
-        .from('audio')
-        .upload(filePath, fileBuffer, { contentType, upsert: false });
-
-      if (uploadError) {
-        console.error('❌ Storage上传失败:', uploadError.message);
-        fs.unlinkSync(req.file.path);
-        return res.json({ success: false, message: '上传到云存储失败：' + uploadError.message });
-      }
-
-      fs.unlinkSync(req.file.path);
-      console.log('✅ API Storage上传成功:', filePath);
-
-      const { data: episode, error: dbError } = await supabase
-        .from('episodes')
-        .insert([{
-          title: title.trim(),
-          description: (description || '').trim(),
-          filename: req.file.filename,
-          original_name: req.file.originalname,
-          file_size: req.file.size,
-          duration: '',
-          uploader_name: (uploader_name || '匿名').trim(),
-          uploader_email: (uploader_email || '').trim(),
-          uploader_ip: getClientIP(req),
-          uploader_agent: req.headers['user-agent'] || '',
-          play_count: 0,
-          status: 0
-        }])
-        .select()
-        .single();
-
-      if (dbError) throw dbError;
+      const uuid = crypto.randomUUID();
+      const info = dbRun(`INSERT INTO episodes (uuid, title, description, filename, original_name, file_size, uploader_name, uploader_email, uploader_ip, uploader_agent, play_count, status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,0,0)`,
+        uuid, title.trim(), (description || '').trim(), req.file.filename, req.file.originalname, req.file.size,
+        (uploader_name || '匿名').trim(), (uploader_email || '').trim(), getClientIP(req), req.headers['user-agent'] || '');
+      const episode = dbGet('SELECT * FROM episodes WHERE id = ?', info.lastInsertRowid);
       res.json({ success: true, pending: true, uuid: episode.uuid, title: title.trim(), message: '已送审，审核通过后将公开展示' });
     } catch (e) {
       console.error('API上传错误:', e.message);
@@ -670,8 +496,7 @@ app.get('/audio-editor', async (req, res) => {
   const podcastId = req.query.podcastId || null;
   let podcast = null;
   if (podcastId) {
-    const { data } = await supabase.from('episodes').select('*').eq('id', podcastId).single();
-    podcast = data;
+    podcast = dbGet('SELECT * FROM episodes WHERE id = ?', podcastId);
   }
   renderWithLayout(req, res, 'audio-editor', { title: '音频编辑', podcast, podcastId });
 });
@@ -713,13 +538,9 @@ app.post('/phone-login', async (req, res) => {
   }
 
   try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .single();
+    const user = dbGet('SELECT * FROM users WHERE email = ?', email);
 
-    if (error || !user) {
+    if (!user) {
       if (isApi) return res.json({ success: false, message: '该邮箱未注册，请先注册' });
       return renderWithLayout(req, res, 'auth/phone-login', { title: '邮箱登录', flash: { category: 'error', message: '该邮箱未注册，请先注册' }, email });
     }
@@ -762,13 +583,9 @@ app.post('/login', async (req, res) => {
   }
 
   try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .or(`username.eq.${identifier},email.eq.${identifier}`)
-      .single();
+    const user = dbGet('SELECT * FROM users WHERE username = ? OR email = ?', identifier, identifier);
 
-    if (error || !user) {
+    if (!user) {
       if (isApi) return res.json({ success: false, message: '账号不存在' });
       return renderWithLayout(req, res, 'auth/login', { title: '登录', flash: { category: 'error', message: '账号不存在' } });
     }
@@ -826,45 +643,31 @@ app.post('/register', async (req, res) => {
     return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '密码至少4位' } });
   }
 
-  try {
-    // 检查是否已注册
-    if (emailTrim) {
-      const { data: existingEmail } = await supabase.from('users').select('id').eq('email', emailTrim).maybeSingle();
-      if (existingEmail) {
-        if (isApi) return res.json({ success: false, message: '该邮箱已被注册' });
-        return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该邮箱已被注册' } });
+    try {
+      if (emailTrim) {
+        const existingEmail = dbGet('SELECT id FROM users WHERE email = ?', emailTrim);
+        if (existingEmail) {
+          if (isApi) return res.json({ success: false, message: '该邮箱已被注册' });
+          return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该邮箱已被注册' } });
+        }
       }
-    }
-    if (usernameTrim) {
-      const { data: existingUser } = await supabase.from('users').select('id').eq('username', usernameTrim).maybeSingle();
-      if (existingUser) {
-        if (isApi) return res.json({ success: false, message: '该用户名已被注册' });
-        return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该用户名已被注册' } });
+      if (usernameTrim) {
+        const existingUser = dbGet('SELECT id FROM users WHERE username = ?', usernameTrim);
+        if (existingUser) {
+          if (isApi) return res.json({ success: false, message: '该用户名已被注册' });
+          return renderWithLayout(req, res, 'auth/register', { title: '注册', flash: { category: 'error', message: '该用户名已被注册' } });
+        }
       }
-    }
 
-    const finalUsername = usernameTrim || ('用户' + emailTrim.split('@')[0].slice(-4));
-    const passwordHash = bcrypt.hashSync(password, 10);
+      const finalUsername = usernameTrim || ('用户' + emailTrim.split('@')[0].slice(-4));
+      const passwordHash = bcrypt.hashSync(password, 10);
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const verificationExpires = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
-    // 生成邮箱激活 token（24 小时有效）
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationExpires = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-
-    const { data: newUser, error } = await supabase
-      .from('users')
-      .insert([{
-        username: finalUsername,
-        email: emailTrim || null,
-        password_hash: passwordHash,
-        nickname: (nickname || finalUsername).trim(),
-        email_verified: false,
-        verification_token: verificationToken,
-        verification_expires: verificationExpires,
-      }])
-      .select()
-      .single();
-
-    if (error) throw error;
+      const userId = crypto.randomUUID();
+      dbRun(`INSERT INTO users (id, username, email, password_hash, nickname, email_verified, verification_token, verification_expires)
+        VALUES (?,?,?,?,?,0,?,?)`,
+        userId, finalUsername, emailTrim || null, passwordHash, (nickname || finalUsername).trim(), verificationToken, verificationExpires);
 
     // 发送激活邮件（失败仅告警，不阻断注册；用户可在登录页重发）
     if (emailTrim) {
@@ -892,29 +695,20 @@ app.get('/verify-email', async (req, res) => {
   if (!token) {
     return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活链接无效。' });
   }
-  try {
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('verification_token', token)
-      .single();
+    try {
+      const user = dbGet('SELECT * FROM users WHERE verification_token = ?', token);
 
-    if (error || !user) {
-      return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活链接无效或已使用。' });
-    }
-    if (user.verification_expires && new Date(user.verification_expires) < new Date()) {
-      return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活链接已过期，请重新注册或在登录页获取新链接。' });
-    }
-    if (user.email_verified) {
-      return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: true, message: '该邮箱已激活，直接登录即可。' });
-    }
+      if (!user) {
+        return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活链接无效或已使用。' });
+      }
+      if (user.verification_expires && new Date(user.verification_expires) < new Date()) {
+        return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: false, message: '激活链接已过期，请重新注册或在登录页获取新链接。' });
+      }
+      if (user.email_verified) {
+        return renderWithLayout(req, res, 'auth/verify-result', { title: '激活', success: true, message: '该邮箱已激活，直接登录即可。' });
+      }
 
-    const { error: updErr } = await supabase
-      .from('users')
-      .update({ email_verified: true, verification_token: null, verification_expires: null })
-      .eq('id', user.id);
-
-    if (updErr) throw updErr;
+      dbRun('UPDATE users SET email_verified = 1, verification_token = NULL, verification_expires = NULL WHERE id = ?', user.id);
 
     return renderWithLayout(req, res, 'auth/verify-result', { title: '激活成功', success: true, message: '邮箱已成功激活，现在可以登录了。' });
   } catch (e) {
@@ -938,8 +732,8 @@ app.post('/api/phone-login', async (req, res) => {
   if (!password) return res.json({ success: false, message: '请输入密码' });
 
   try {
-    const { data: user, error } = await supabase.from('users').select('*').eq('email', email).single();
-    if (error || !user) return res.json({ success: false, message: '该邮箱未注册，请先注册' });
+    const user = dbGet('SELECT * FROM users WHERE email = ?', email);
+    if (!user) return res.json({ success: false, message: '该邮箱未注册，请先注册' });
 
     if (!bcrypt.compareSync(password, user.password_hash)) return res.json({ success: false, message: '密码错误' });
     if (!user.email_verified) return res.json({ success: false, message: '请先到邮箱完成激活后再登录' });
@@ -963,30 +757,19 @@ app.post('/api/register', async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) return res.json({ success: false, message: '请输入正确的邮箱地址' });
   if (!passwordTrim || passwordTrim.length < 4) return res.json({ success: false, message: '密码至少4位' });
 
-  try {
-    const { data: existing } = await supabase.from('users').select('id').eq('email', emailTrim).maybeSingle();
-    if (existing) return res.json({ success: false, message: '该邮箱已被注册' });
+    try {
+      const existing = dbGet('SELECT id FROM users WHERE email = ?', emailTrim);
+      if (existing) return res.json({ success: false, message: '该邮箱已被注册' });
 
-    const finalUsername = '用户' + emailTrim.split('@')[0].slice(-4);
-    const passwordHash = bcrypt.hashSync(passwordTrim, 10);
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationExpires = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      const finalUsername = '用户' + emailTrim.split('@')[0].slice(-4);
+      const passwordHash = bcrypt.hashSync(passwordTrim, 10);
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const verificationExpires = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 
-    const { data: newUser, error } = await supabase
-      .from('users')
-      .insert([{
-        username: finalUsername,
-        email: emailTrim,
-        password_hash: passwordHash,
-        nickname: (nickname || finalUsername).trim(),
-        email_verified: false,
-        verification_token: verificationToken,
-        verification_expires: verificationExpires,
-      }])
-      .select()
-      .single();
-
-    if (error) throw error;
+      const userId = crypto.randomUUID();
+      dbRun(`INSERT INTO users (id, username, email, password_hash, nickname, email_verified, verification_token, verification_expires)
+        VALUES (?,?,?,?,?,0,?,?)`,
+        userId, finalUsername, emailTrim, passwordHash, (nickname || finalUsername).trim(), verificationToken, verificationExpires);
 
     try {
       const verifyUrl = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;
@@ -1004,8 +787,8 @@ app.post('/api/register', async (req, res) => {
 app.get('/api/me', async (req, res) => {
   if (!req.session.userId) return res.json({ success: false, message: '未登录' });
   try {
-    const { data: user, error } = await supabase.from('users').select('id, username, nickname, phone').eq('id', req.session.userId).single();
-    if (error || !user) return res.json({ success: false, message: '用户不存在' });
+    const user = dbGet('SELECT id, username, nickname, phone FROM users WHERE id = ?', req.session.userId);
+    if (!user) return res.json({ success: false, message: '用户不存在' });
     return res.json({ success: true, user });
   } catch (e) {
     return res.json({ success: false, message: '查询失败' });
@@ -1023,14 +806,13 @@ app.get('/api/podcasts', async (req, res) => {
     const tag = (req.query.tag || '').trim();
     const sort = req.query.sort || 'recent'; // recent | hot
 
-    let query = supabase.from('episodes').select('*').eq('status', 1);
-
+    let sql = 'SELECT * FROM episodes WHERE status = 1';
+    const params = [];
     if (search) {
-      query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+      sql += ' AND (title LIKE ? OR description LIKE ?)';
+      params.push('%' + search + '%', '%' + search + '%');
     }
-
-    const { data: podcasts, error } = await query;
-    if (error) throw error;
+    const podcasts = dbAll(sql, ...params);
 
     let result = (podcasts || []).map(p => ({
       id: p.id,
@@ -1044,9 +826,9 @@ app.get('/api/podcasts', async (req, res) => {
       uploader_name: p.uploader_name,
       play_count: p.play_count || 0,
       created_at: p.created_at,
-      audio_url: `${SUPABASE_URL}/storage/v1/object/public/audio/${p.filename}`,
-      cover_url: null, // 后续可扩展封面
-      custom_tags: p.custom_tags || []  // 用户自定义标签
+      audio_url: `/uploads/${p.filename}`,
+      cover_url: null,
+      custom_tags: parseTags(p.custom_tags)
     }));
 
     // 标签过滤（支持系统标签 + 自定义标签）
@@ -1075,9 +857,7 @@ app.get('/api/podcasts', async (req, res) => {
 // 热门排行
 app.get('/api/podcasts/hot', async (req, res) => {
   try {
-    const { data: podcasts, error } = await supabase
-      .from('episodes').select('*').eq('status', 1);
-    if (error) throw error;
+    const podcasts = dbAll('SELECT * FROM episodes WHERE status = 1');
     const hot = (podcasts || [])
       .sort((a, b) => (b.play_count || 0) - (a.play_count || 0))
       .slice(0, 5)
@@ -1094,10 +874,7 @@ app.get('/api/podcasts/hot', async (req, res) => {
 // 最近更新
 app.get('/api/podcasts/recent', async (req, res) => {
   try {
-    const { data: podcasts, error } = await supabase
-      .from('episodes').select('*').eq('status', 1)
-      .order('created_at', { ascending: false }).limit(5);
-    if (error) throw error;
+    const podcasts = dbAll('SELECT * FROM episodes WHERE status = 1 ORDER BY created_at DESC LIMIT 5');
     const recent = (podcasts || []).map(p => ({
       uuid: p.uuid, title: p.title, uploader_name: p.uploader_name, created_at: p.created_at
     }));
@@ -1110,12 +887,10 @@ app.get('/api/podcasts/recent', async (req, res) => {
 // 单条播客详情
 app.get('/api/podcasts/:uuid', async (req, res) => {
   try {
-    const { data: podcast, error } = await supabase
-      .from('episodes').select('*').eq('uuid', req.params.uuid).eq('status', 1).single();
-    if (error || !podcast) return res.json({ success: false, message: '未找到' });
+    const podcast = dbGet('SELECT * FROM episodes WHERE uuid = ? AND status = 1', req.params.uuid);
+    if (!podcast) return res.json({ success: false, message: '未找到' });
 
-    // 增加播放计数
-    await supabase.from('episodes').update({ play_count: (podcast.play_count || 0) + 1 }).eq('uuid', req.params.uuid);
+    dbRun('UPDATE episodes SET play_count = play_count + 1 WHERE uuid = ?', req.params.uuid);
 
     res.json({
       success: true,
@@ -1126,8 +901,8 @@ app.get('/api/podcasts/:uuid', async (req, res) => {
         file_size: podcast.file_size, duration: podcast.duration || '',
         uploader_name: podcast.uploader_name, play_count: (podcast.play_count || 0) + 1,
         created_at: podcast.created_at,
-        audio_url: `${SUPABASE_URL}/storage/v1/object/public/audio/${podcast.filename}`,
-        custom_tags: podcast.custom_tags || []
+        audio_url: `/uploads/${podcast.filename}`,
+        custom_tags: parseTags(podcast.custom_tags)
       }
     });
   } catch (e) {
@@ -1138,8 +913,8 @@ app.get('/api/podcasts/:uuid', async (req, res) => {
 // 标签列表（系统标签 + 所有用户自定义标签）
 app.get('/api/tags', async (req, res) => {
   try {
-    const { data: episodes } = await supabase.from('episodes').select('custom_tags').eq('status', 1);
-    const customTags = [...new Set((episodes || []).flatMap(e => e.custom_tags || []))];
+    const episodes = dbAll('SELECT custom_tags FROM episodes WHERE status = 1');
+    const customTags = [...new Set(episodes.flatMap(e => parseTags(e.custom_tags)))];
     const allTags = [...new Set([...TAG_KEYWORDS, ...customTags])];
     res.json({ success: true, tags: allTags, system_tags: TAG_KEYWORDS, custom_tags: customTags });
   } catch (e) {
@@ -1157,12 +932,7 @@ app.put('/api/podcasts/:uuid/tags', async (req, res) => {
     // 过滤空值和重复
     const cleanTags = [...new Set(tags.map(t => String(t).trim()).filter(t => t.length > 0))];
 
-    const { error } = await supabase
-      .from('episodes')
-      .update({ custom_tags: cleanTags })
-      .eq('uuid', req.params.uuid);
-
-    if (error) throw error;
+    dbRun("UPDATE episodes SET custom_tags = ?, updated_at = datetime('now','localtime') WHERE uuid = ?", JSON.stringify(cleanTags), req.params.uuid);
     res.json({ success: true, custom_tags: cleanTags });
   } catch (e) {
     console.error('更新标签失败:', e.message);
@@ -1173,8 +943,7 @@ app.put('/api/podcasts/:uuid/tags', async (req, res) => {
 // 热门创作者
 app.get('/api/creators', async (req, res) => {
   try {
-    const { data: podcasts, error } = await supabase.from('episodes').select('uploader_name').eq('status', 1);
-    if (error) throw error;
+    const podcasts = dbAll('SELECT uploader_name FROM episodes WHERE status = 1');
     const count = {};
     (podcasts || []).forEach(p => { count[p.uploader_name] = (count[p.uploader_name] || 0) + 1; });
     const creators = Object.entries(count)
@@ -1232,13 +1001,7 @@ app.get('/logout', (req, res) => {
 // 获取某节目的评论列表
 app.get('/api/episodes/:uuid/comments', async (req, res) => {
   try {
-    const { data: comments, error } = await supabase
-      .from('comments')
-      .select('*')
-      .eq('episode_uuid', req.params.uuid)
-      .eq('status', 1)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
+    const comments = dbAll('SELECT * FROM comments WHERE episode_uuid = ? AND status = 1 ORDER BY created_at DESC', req.params.uuid);
     res.json({ success: true, comments: comments || [] });
   } catch (e) {
     res.json({ success: false, message: e.message });
@@ -1253,12 +1016,9 @@ app.post('/api/episodes/:uuid/comments', async (req, res) => {
   if (content.length > 500) return res.json({ success: false, message: '评论内容不能超过500字' });
   try {
     const nickname = req.session.nickname || req.session.username || '匿名';
-    const { data: comment, error } = await supabase
-      .from('comments')
-      .insert([{ episode_uuid: req.params.uuid, nickname: nickname.trim().slice(0, 20), content: content.trim(), status: 1 }])
-      .select()
-      .single();
-    if (error) throw error;
+    const info = dbRun('INSERT INTO comments (episode_uuid, nickname, content, status) VALUES (?,?,?,1)',
+      req.params.uuid, nickname.trim().slice(0, 20), content.trim());
+    const comment = dbGet('SELECT * FROM comments WHERE id = ?', info.lastInsertRowid);
     res.json({ success: true, comment });
   } catch (e) {
     res.json({ success: false, message: e.message });
@@ -1393,28 +1153,20 @@ app.get('/sitemap.xml', async (req, res) => {
     ];
 
     // 动态获取所有播客节目页面
-    if (supabase) {
-      try {
-        const { data: episodes } = await supabase
-          .from('episodes')
-          .select('uuid, updated_at')
-          .eq('status', 'published')
-          .order('updated_at', { ascending: false })
-          .limit(5000);
-
-        if (episodes) {
-          episodes.forEach(ep => {
-            urls.push({
-              loc: `/play/${ep.uuid}`,
-              priority: '0.7',
-              changefreq: 'weekly',
-              lastmod: ep.updated_at
-            });
+    try {
+      const episodes = dbAll("SELECT uuid, updated_at FROM episodes WHERE status = 1 ORDER BY updated_at DESC LIMIT 5000");
+      if (episodes) {
+        episodes.forEach(ep => {
+          urls.push({
+            loc: `/play/${ep.uuid}`,
+            priority: '0.7',
+            changefreq: 'weekly',
+            lastmod: ep.updated_at
           });
-        }
-      } catch (e) {
-        console.warn('[Sitemap] 获取播客列表失败:', e.message);
+        });
       }
+    } catch (e) {
+      console.warn('[Sitemap] 获取播客列表失败:', e.message);
     }
 
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -1451,20 +1203,14 @@ app.get('/feed.xml', async (req, res) => {
 
     let itemsXml = '';
 
-    if (supabase) {
-      try {
-        const { data: episodes, error } = await supabase
-          .from('episodes')
-          .select('uuid, title, description, filename, file_size, play_count, created_at, updated_at')
-          .eq('status', 1)
-          .order('created_at', { ascending: false })
-          .limit(100);
+    try {
+      const episodes = dbAll('SELECT uuid, title, description, filename, file_size, play_count, created_at, updated_at FROM episodes WHERE status = 1 ORDER BY created_at DESC LIMIT 100');
 
-        if (episodes && !error) {
-          episodes.forEach(ep => {
-            const pubDate = new Date(ep.created_at || ep.updated_at).toUTCString();
-            const epUrl = `${siteUrl}/play/${ep.uuid}`;
-            const audioUrl = `${SUPABASE_URL}/storage/v1/object/public/audio/${ep.filename}`;
+      if (episodes) {
+        episodes.forEach(ep => {
+          const pubDate = new Date(ep.created_at || ep.updated_at).toUTCString();
+          const epUrl = `${siteUrl}/play/${ep.uuid}`;
+          const audioUrl = `${siteUrl}/uploads/${ep.filename}`;
             itemsXml += '    <item>\n';
             itemsXml += `      <title>${escXml(ep.title)}</title>\n`;
             itemsXml += `      <link>${epUrl}</link>\n`;
@@ -1478,7 +1224,6 @@ app.get('/feed.xml', async (req, res) => {
       } catch (e) {
         console.warn('[RSS] 获取播客列表失败:', e.message);
       }
-    }
 
     let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
     xml += '<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">\n';

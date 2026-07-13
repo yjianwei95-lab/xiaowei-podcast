@@ -1,13 +1,11 @@
 // 小伟播客 · 运营系统（独立进程，端口 4000）
-// 与播客前端(3000)共享同一 Supabase 后端，但使用独立会话与独立界面。
+// 与播客前端(3000)共享同一本地 SQLite 数据层（见 db.js），但使用独立会话与独立界面。
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
-const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
-const ws = require('ws');
 
 // 极简 .env 加载（不依赖 dotenv；已存在的 process.env 优先）
 (function loadEnvFile() {
@@ -28,17 +26,8 @@ const ws = require('ws');
 const app = express();
 const PORT = process.env.OPS_PORT || 4000;
 
-// ===== Supabase（与播客共用）=====
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
-const supabaseKey = SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY;
-let supabase = null;
-try {
-  supabase = createClient(SUPABASE_URL, supabaseKey, { realtime: { transport: ws } });
-} catch (e) {
-  console.warn('[OPS] ⚠️ Supabase 未连接（环境变量未配置？）:', e.message);
-}
+// ===== 本地 SQLite 数据层（见 db.js，与播客前端共用）=====
+const { db, dbAll, dbGet, dbRun } = require('./db');
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -103,29 +92,27 @@ function renderOps(req, res, template, data = {}) {
       flash: data.flash || null,
       session: req.session,
       content: html,
-      dbOk: !!supabase
+      dbOk: true
     });
   });
 }
-async function getOpsStats() {
+function getOpsStats() {
   const out = { totalPodcasts:0, totalPlayed:0, totalVisitors:0, todayVisitors:0, totalSize:0, totalComments:0, totalUsers:0 };
-  if (!supabase) return out;
   try {
-    const { count: totalPodcasts } = await supabase.from('episodes').select('*', { count:'exact', head:true }).eq('status', 1);
-    const { data: podcasts } = await supabase.from('episodes').select('play_count, file_size').eq('status', 1);
-    const { count: totalVisitors } = await supabase.from('visitors').select('*', { count:'exact', head:true });
+    const totalPodcasts = dbGet("SELECT COUNT(*) AS c FROM episodes WHERE status = 1")?.c || 0;
+    const podcasts = dbAll('SELECT play_count, file_size FROM episodes WHERE status = 1');
+    const totalVisitors = dbGet('SELECT COUNT(*) AS c FROM visitors')?.c || 0;
     const today = localNow().slice(0, 10);
-    const { count: todayVisitors } = await supabase.from('visitors').select('*', { count:'exact', head:true })
-      .gte('visited_at', today + 'T00:00:00+08:00').lt('visited_at', today + 'T23:59:59+08:00');
-    const { count: totalComments } = await supabase.from('comments').select('*', { count:'exact', head:true }).eq('status', 1);
-    const { count: totalUsers } = await supabase.from('users').select('*', { count:'exact', head:true });
-    out.totalPodcasts = totalPodcasts || 0;
-    out.totalPlayed = podcasts?.reduce((s,p)=>s+(p.play_count||0),0) || 0;
-    out.totalSize = podcasts?.reduce((s,p)=>s+(p.file_size||0),0) || 0;
-    out.totalVisitors = totalVisitors || 0;
-    out.todayVisitors = todayVisitors || 0;
-    out.totalComments = totalComments || 0;
-    out.totalUsers = totalUsers || 0;
+    const todayVisitors = dbGet('SELECT COUNT(*) AS c FROM visitors WHERE visited_at >= ? AND visited_at <= ?', today + ' 00:00:00', today + ' 23:59:59')?.c || 0;
+    const totalComments = dbGet("SELECT COUNT(*) AS c FROM comments WHERE status = 1")?.c || 0;
+    const totalUsers = dbGet('SELECT COUNT(*) AS c FROM users')?.c || 0;
+    out.totalPodcasts = totalPodcasts;
+    out.totalPlayed = podcasts.reduce((s,p)=>s+(p.play_count||0),0);
+    out.totalSize = podcasts.reduce((s,p)=>s+(p.file_size||0),0);
+    out.totalVisitors = totalVisitors;
+    out.todayVisitors = todayVisitors;
+    out.totalComments = totalComments;
+    out.totalUsers = totalUsers;
   } catch (e) { console.error('[OPS] getOpsStats error:', e.message); }
   return out;
 }
@@ -157,14 +144,12 @@ function toCsv(rows, headers) {
 // ===================================================================
 app.get('/ops/login', (req, res) => {
   if (req.session.opsLoggedIn) return res.redirect('/ops');
-  res.render('ops/login', { flash: null, dbOk: !!supabase });
+  res.render('ops/login', { flash: null, dbOk: true });
 });
 
-app.post('/ops/login', async (req, res) => {
-  if (!supabase) return res.render('ops/login', { flash: { category:'error', message:'数据库未连接，无法登录' }, dbOk:false });
+app.post('/ops/login', (req, res) => {
   try {
-    const { data: user, error } = await supabase
-      .from('admins').select('*').eq('username', req.body.username).eq('password', req.body.password).single();
+    const user = dbGet('SELECT * FROM admins WHERE username = ? AND password = ?', req.body.username, req.body.password);
     if (user) {
       req.session.opsLoggedIn = true;
       req.session.opsUser = req.body.username;
@@ -179,23 +164,17 @@ app.post('/ops/login', async (req, res) => {
 app.get('/ops/logout', (req, res) => { req.session.destroy(); res.redirect('/ops/login'); });
 
 // 根路径
-app.get('/ops', requireOps, async (req, res) => {
+app.get('/ops', requireOps, (req, res) => {
   try {
-    const stats = await getOpsStats();
-    let recentPodcasts = [], recentVisitors = [], topEpisodes = [], visitorTrend = [], uploadTrend = [];
-    if (supabase) {
-      const { data: rp } = await supabase.from('episodes').select('*').order('created_at',{ascending:false}).limit(5);
-      recentPodcasts = rp || [];
-      const { data: rv } = await supabase.from('visitors').select('*').order('visited_at',{ascending:false}).limit(10);
-      recentVisitors = rv || [];
-      const { data: te } = await supabase.from('episodes').select('title, play_count').eq('status',1).order('play_count',{ascending:false}).limit(10);
-      topEpisodes = te || [];
-      const { data: allV } = await supabase.from('visitors').select('visited_at');
-      visitorTrend = groupByDay(allV, 'visited_at', 30);
-      const { data: allE } = await supabase.from('episodes').select('created_at');
-      uploadTrend = groupByDay(allE, 'created_at', 30);
-    }
-    const { data: allEp } = supabase ? await supabase.from('episodes').select('uuid, title') : { data: [] };
+    const stats = getOpsStats();
+    const recentPodcasts = dbAll('SELECT * FROM episodes ORDER BY created_at DESC LIMIT 5');
+    const recentVisitors = dbAll('SELECT * FROM visitors ORDER BY visited_at DESC LIMIT 10');
+    const topEpisodes = dbAll('SELECT title, play_count FROM episodes WHERE status = 1 ORDER BY play_count DESC LIMIT 10');
+    const allV = dbAll('SELECT visited_at FROM visitors');
+    const visitorTrend = groupByDay(allV, 'visited_at', 30);
+    const allE = dbAll('SELECT created_at FROM episodes');
+    const uploadTrend = groupByDay(allE, 'created_at', 30);
+    const allEp = dbAll('SELECT uuid, title FROM episodes');
     const titleMap = {}; (allEp || []).forEach(ep => titleMap[ep.uuid] = ep.title);
     const visitorsWithTitle = recentVisitors.map(v => ({ ...v, podcast_title: titleMap[v.episode_uuid] || '' }));
     renderOps(req, res, 'dashboard', {
@@ -213,88 +192,88 @@ app.get('/ops', requireOps, async (req, res) => {
 // ===================================================================
 // 内容运营（迁移自原后台播客管理 + 置顶/精选/推荐）
 // ===================================================================
-app.get('/ops/content', requireOps, async (req, res) => {
+app.get('/ops/content', requireOps, (req, res) => {
   try {
-    const { data: podcasts, error } = supabase
-      ? await supabase.from('episodes').select('*').order('created_at',{ascending:false})
-      : { data: [], error: null };
-    if (error) throw error;
+    const podcasts = dbAll('SELECT * FROM episodes ORDER BY created_at DESC');
     renderOps(req, res, 'content', { podcasts: podcasts || [], title: '内容运营' });
   } catch (e) {
     renderOps(req, res, 'content', { podcasts: [], flash: { category:'error', message:'加载失败: ' + e.message } });
   }
 });
 
-app.post('/ops/content/toggle/:id', requireOps, async (req, res) => {
+app.post('/ops/content/toggle/:id', requireOps, (req, res) => {
   try {
-    const { data: ep } = await supabase.from('episodes').select('status').eq('id', req.params.id).single();
-    if (ep) await supabase.from('episodes').update({ status: ep.status ? 0 : 1 }).eq('id', req.params.id);
+    const ep = dbGet('SELECT status FROM episodes WHERE id = ?', req.params.id);
+    if (ep) dbRun('UPDATE episodes SET status = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', ep.status ? 0 : 1, req.params.id);
   } catch (e) { console.error('toggle error:', e.message); }
   res.redirect('/ops/content');
 });
-app.post('/ops/content/pin/:id', requireOps, async (req, res) => {
-  try { const { data: ep } = await supabase.from('episodes').select('is_pinned').eq('id', req.params.id).single();
-    if (ep) await supabase.from('episodes').update({ is_pinned: !ep.is_pinned }).eq('id', req.params.id); } catch(e){}
-  res.redirect('/ops/content');
-});
-app.post('/ops/content/feature/:id', requireOps, async (req, res) => {
-  try { const { data: ep } = await supabase.from('episodes').select('is_featured').eq('id', req.params.id).single();
-    if (ep) await supabase.from('episodes').update({ is_featured: !ep.is_featured }).eq('id', req.params.id); } catch(e){}
-  res.redirect('/ops/content');
-});
-app.post('/ops/content/recommend/:id', requireOps, async (req, res) => {
-  try { const { data: ep } = await supabase.from('episodes').select('is_recommended').eq('id', req.params.id).single();
-    if (ep) await supabase.from('episodes').update({ is_recommended: !ep.is_recommended }).eq('id', req.params.id); } catch(e){}
-  res.redirect('/ops/content');
-});
-app.post('/ops/content/delete/:id', requireOps, async (req, res) => {
+app.post('/ops/content/pin/:id', requireOps, (req, res) => {
   try {
-    const { data: ep } = await supabase.from('episodes').select('uuid, filename').eq('id', req.params.id).single();
+    const ep = dbGet('SELECT is_pinned FROM episodes WHERE id = ?', req.params.id);
+    if (ep) dbRun('UPDATE episodes SET is_pinned = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', ep.is_pinned ? 0 : 1, req.params.id);
+  } catch (e) { console.error('pin error:', e.message); }
+  res.redirect('/ops/content');
+});
+app.post('/ops/content/feature/:id', requireOps, (req, res) => {
+  try {
+    const ep = dbGet('SELECT is_featured FROM episodes WHERE id = ?', req.params.id);
+    if (ep) dbRun('UPDATE episodes SET is_featured = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', ep.is_featured ? 0 : 1, req.params.id);
+  } catch (e) { console.error('feature error:', e.message); }
+  res.redirect('/ops/content');
+});
+app.post('/ops/content/recommend/:id', requireOps, (req, res) => {
+  try {
+    const ep = dbGet('SELECT is_recommended FROM episodes WHERE id = ?', req.params.id);
+    if (ep) dbRun('UPDATE episodes SET is_recommended = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?', ep.is_recommended ? 0 : 1, req.params.id);
+  } catch (e) { console.error('recommend error:', e.message); }
+  res.redirect('/ops/content');
+});
+app.post('/ops/content/delete/:id', requireOps, (req, res) => {
+  try {
+    const ep = dbGet('SELECT uuid, filename FROM episodes WHERE id = ?', req.params.id);
     if (ep) {
-      await supabase.storage.from('audio').remove([`${ep.filename}`]);
       const localPath = path.join(UPLOAD_DIR, ep.filename);
       if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
-      await supabase.from('visitors').delete().eq('episode_uuid', ep.uuid);
-      await supabase.from('episodes').delete().eq('id', req.params.id);
+      dbRun('DELETE FROM visitors WHERE episode_uuid = ?', ep.uuid);
+      dbRun('DELETE FROM comments WHERE episode_uuid = ?', ep.uuid);
+      dbRun('DELETE FROM episodes WHERE id = ?', req.params.id);
     }
   } catch (e) { console.error('delete error:', e.message); }
   res.redirect('/ops/content');
 });
-app.get('/ops/content/edit/:id', requireOps, async (req, res) => {
+app.get('/ops/content/edit/:id', requireOps, (req, res) => {
   try {
-    const { data: podcast, error } = await supabase.from('episodes').select('*').eq('id', req.params.id).single();
-    if (error || !podcast) return res.redirect('/ops/content');
+    const podcast = dbGet('SELECT * FROM episodes WHERE id = ?', req.params.id);
+    if (!podcast) return res.redirect('/ops/content');
     renderOps(req, res, 'content-edit', { podcast, title: '编辑内容' });
   } catch (e) { res.redirect('/ops/content'); }
 });
-app.post('/ops/content/edit/:id', requireOps, async (req, res) => {
+app.post('/ops/content/edit/:id', requireOps, (req, res) => {
   try {
-    await supabase.from('episodes').update({
-      title: req.body.title,
-      uploader_name: req.body.uploader_name,
-      uploader_email: req.body.uploader_email,
-      description: req.body.description || '',
-      is_pinned: req.body.is_pinned === 'on',
-      is_featured: req.body.is_featured === 'on',
-      is_recommended: req.body.is_recommended === 'on'
-    }).eq('id', req.params.id);
+    dbRun('UPDATE episodes SET title = ?, uploader_name = ?, uploader_email = ?, description = ?, is_pinned = ?, is_featured = ?, is_recommended = ?, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?',
+      req.body.title,
+      req.body.uploader_name,
+      req.body.uploader_email,
+      req.body.description || '',
+      req.body.is_pinned === 'on' ? 1 : 0,
+      req.body.is_featured === 'on' ? 1 : 0,
+      req.body.is_recommended === 'on' ? 1 : 0,
+      req.params.id
+    );
   } catch (e) { console.error('edit error:', e.message); }
   res.redirect('/ops/content');
 });
-app.post('/ops/content/replace-audio/:id', requireOps, upload.single('audio'), async (req, res) => {
+app.post('/ops/content/replace-audio/:id', requireOps, upload.single('audio'), (req, res) => {
   if (req.file) {
     try {
-      const { data: ep } = await supabase.from('episodes').select('filename, uuid').eq('id', req.params.id).single();
+      const ep = dbGet('SELECT filename, uuid FROM episodes WHERE id = ?', req.params.id);
       if (ep) {
-        await supabase.storage.from('audio').remove([`${ep.filename}`]);
         const oldLocal = path.join(UPLOAD_DIR, ep.filename);
         if (fs.existsSync(oldLocal)) fs.unlinkSync(oldLocal);
-        const buf = fs.readFileSync(req.file.path);
-        const ext = req.file.originalname.split('.').pop().toLowerCase();
-        const ct = AUDIO_CONTENT_TYPES[ext] || 'audio/mpeg';
-        await supabase.storage.from('audio').upload(`${req.file.filename}`, buf, { contentType: ct });
-        fs.unlinkSync(req.file.path);
-        await supabase.from('episodes').update({ filename: req.file.filename, original_name: req.file.originalname, file_size: req.file.size, created_at: localNow() }).eq('id', req.params.id);
+        // multer 已把新文件直接写入 UPLOAD_DIR，文件名即 req.file.filename，无需再上传
+        dbRun('UPDATE episodes SET filename = ?, original_name = ?, file_size = ?, created_at = datetime(\'now\',\'localtime\'), updated_at = datetime(\'now\',\'localtime\') WHERE id = ?',
+          req.file.filename, req.file.originalname, req.file.size, req.params.id);
       }
     } catch (e) { console.error('replace audio error:', e.message); }
   }
@@ -304,44 +283,42 @@ app.post('/ops/content/replace-audio/:id', requireOps, upload.single('audio'), a
 // ===================================================================
 // 公告与活动
 // ===================================================================
-app.get('/ops/announcements', requireOps, async (req, res) => {
+app.get('/ops/announcements', requireOps, (req, res) => {
   let announcements = [];
-  let dbErr = null;
-  if (supabase) {
-    const { data, error } = await supabase.from('announcements').select('*').order('sort',{ascending:false}).order('created_at',{ascending:false});
-    if (error) dbErr = error.message; else announcements = data || [];
-  }
-  renderOps(req, res, 'announcements', {
-    announcements, dbErr,
-    title: '公告与活动',
-    flash: dbErr ? { category:'error', message:'公告表不存在，请先执行 ops-setup.sql：' + dbErr } : null
-  });
-});
-app.post('/ops/announcements/add', requireOps, async (req, res) => {
   try {
-    await supabase.from('announcements').insert([{ text: req.body.text, date: req.body.date || null, active: req.body.active === 'on' }]);
+    announcements = dbAll('SELECT * FROM announcements ORDER BY sort DESC, created_at DESC');
+  } catch (e) {
+    console.error('list announcements error:', e.message);
+  }
+  renderOps(req, res, 'announcements', { announcements, dbErr: null, title: '公告与活动', flash: null });
+});
+app.post('/ops/announcements/add', requireOps, (req, res) => {
+  try {
+    dbRun('INSERT INTO announcements (text, date, active) VALUES (?, ?, ?)',
+      req.body.text, req.body.date || null, req.body.active === 'on' ? 1 : 0);
   } catch (e) { console.error('add announcement error:', e.message); }
   res.redirect('/ops/announcements');
 });
-app.post('/ops/announcements/toggle/:id', requireOps, async (req, res) => {
-  try { const { data: a } = await supabase.from('announcements').select('active').eq('id', req.params.id).single();
-    if (a) await supabase.from('announcements').update({ active: !a.active }).eq('id', req.params.id); } catch(e){}
+app.post('/ops/announcements/toggle/:id', requireOps, (req, res) => {
+  try {
+    const a = dbGet('SELECT active FROM announcements WHERE id = ?', req.params.id);
+    if (a) dbRun('UPDATE announcements SET active = ? WHERE id = ?', a.active ? 0 : 1, req.params.id);
+  } catch (e) { console.error('toggle announcement error:', e.message); }
   res.redirect('/ops/announcements');
 });
-app.post('/ops/announcements/delete/:id', requireOps, async (req, res) => {
-  try { await supabase.from('announcements').delete().eq('id', req.params.id); } catch(e){}
+app.post('/ops/announcements/delete/:id', requireOps, (req, res) => {
+  try { dbRun('DELETE FROM announcements WHERE id = ?', req.params.id); } catch (e) { console.error('delete announcement error:', e.message); }
   res.redirect('/ops/announcements');
 });
 
 // ===================================================================
 // 用户与创作者
 // ===================================================================
-app.get('/ops/users', requireOps, async (req, res) => {
+app.get('/ops/users', requireOps, (req, res) => {
   let users = [], creators = [];
-  if (supabase) {
-    const { data: ud } = await supabase.from('users').select('id, username, nickname, phone, created_at').order('created_at',{ascending:false}).limit(200);
-    users = ud || [];
-    const { data: eps } = await supabase.from('episodes').select('uploader_name, play_count, status').eq('status', 1);
+  try {
+    users = dbAll('SELECT id, username, nickname, phone, email, created_at FROM users ORDER BY created_at DESC LIMIT 200');
+    const eps = dbAll('SELECT uploader_name, play_count, status FROM episodes WHERE status = 1');
     const map = {};
     (eps || []).forEach(e => {
       if (!e.uploader_name) return;
@@ -350,26 +327,27 @@ app.get('/ops/users', requireOps, async (req, res) => {
       map[e.uploader_name].plays += (e.play_count || 0);
     });
     creators = Object.values(map).sort((a,b)=>b.plays-a.plays).slice(0, 20);
-  }
+  } catch (e) { console.error('users error:', e.message); }
   renderOps(req, res, 'users', { users, creators, title: '用户与创作者' });
 });
 
 // ===================================================================
 // 评论审核（迁移自原后台评论管理）
 // ===================================================================
-app.get('/ops/comments', requireOps, async (req, res) => {
+app.get('/ops/comments', requireOps, (req, res) => {
   try {
-    const { data: comments, error } = supabase
-      ? await supabase.from('comments').select('*, episodes(title)').order('created_at',{ascending:false})
-      : { data: [] };
-    if (error) throw error;
+    const comments = dbAll('SELECT * FROM comments ORDER BY created_at DESC');
+    // 关联节目标题（兼容原 supabase episodes(title) 关联字段）
+    const eps = dbAll('SELECT uuid, title FROM episodes');
+    const titleMap = {}; (eps || []).forEach(e => titleMap[e.uuid] = e.title);
+    comments.forEach(c => { c.episodes = { title: titleMap[c.episode_uuid] || '' }; });
     renderOps(req, res, 'comments', { comments: comments || [], title: '评论审核' });
   } catch (e) {
     renderOps(req, res, 'comments', { comments: [], flash: { category:'error', message:'加载失败: ' + e.message } });
   }
 });
-app.post('/ops/comments/delete/:id', requireOps, async (req, res) => {
-  try { await supabase.from('comments').update({ status: 0 }).eq('id', req.params.id); } catch(e){}
+app.post('/ops/comments/delete/:id', requireOps, (req, res) => {
+  try { dbRun('UPDATE comments SET status = 0 WHERE id = ?', req.params.id); } catch (e) { console.error('comment delete error:', e.message); }
   res.redirect('/ops/comments');
 });
 
@@ -384,21 +362,18 @@ function sendCsv(res, filename, rows, headers) {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(toCsv(rows, headers));
 }
-app.get('/ops/export/episodes', requireOps, async (req, res) => {
-  if (!supabase) return res.status(500).send('数据库未连接');
-  const { data } = await supabase.from('episodes').select('*').order('created_at',{ascending:false});
+app.get('/ops/export/episodes', requireOps, (req, res) => {
+  const data = dbAll('SELECT * FROM episodes ORDER BY created_at DESC');
   sendCsv(res, 'episodes.csv', data || [],
-    ['id','uuid','title','description','uploader_name','uploader_email','uploader_ip','play_count','file_size','status','is_pinned','is_featured','is_recommended','created_at']);
+    ['id','uuid','title','description','uploader_name','uploader_email','uploader_ip','play_count','file_size','status','is_pinned','is_featured','is_recommended','created_at','updated_at']);
 });
-app.get('/ops/export/visitors', requireOps, async (req, res) => {
-  if (!supabase) return res.status(500).send('数据库未连接');
-  const { data } = await supabase.from('visitors').select('*').order('visited_at',{ascending:false});
+app.get('/ops/export/visitors', requireOps, (req, res) => {
+  const data = dbAll('SELECT * FROM visitors ORDER BY visited_at DESC');
   sendCsv(res, 'visitors.csv', data || [],
-    ['id','episode_uuid','ip','device_type','os','os_version','browser','browser_version','device_brand','device_model','visited_at']);
+    ['id','episode_uuid','ip','user_agent','referer','device_type','os','os_version','browser','browser_version','device_brand','device_model','screen_resolution','language','platform','visited_at']);
 });
-app.get('/ops/export/comments', requireOps, async (req, res) => {
-  if (!supabase) return res.status(500).send('数据库未连接');
-  const { data } = await supabase.from('comments').select('*').order('created_at',{ascending:false});
+app.get('/ops/export/comments', requireOps, (req, res) => {
+  const data = dbAll('SELECT * FROM comments ORDER BY created_at DESC');
   sendCsv(res, 'comments.csv', data || [], ['id','episode_uuid','nickname','content','created_at','status']);
 });
 
@@ -406,11 +381,11 @@ app.get('/ops/export/comments', requireOps, async (req, res) => {
 // 运营账号设置（修改密码，迁移自原后台修改密码）
 // ===================================================================
 app.get('/ops/settings', requireOps, (req, res) => renderOps(req, res, 'settings', { title: '运营账号设置' }));
-app.post('/ops/settings', requireOps, async (req, res) => {
+app.post('/ops/settings', requireOps, (req, res) => {
   try {
-    const { data: user } = await supabase.from('admins').select('*').eq('username', req.session.opsUser).eq('password', req.body.old_password).single();
+    const user = dbGet('SELECT * FROM admins WHERE username = ? AND password = ?', req.session.opsUser, req.body.old_password);
     if (user) {
-      await supabase.from('admins').update({ password: req.body.new_password }).eq('username', req.session.opsUser);
+      dbRun('UPDATE admins SET password = ? WHERE username = ?', req.body.new_password, req.session.opsUser);
       return renderOps(req, res, 'settings', { flash: { category:'success', message:'密码已修改' }, title: '运营账号设置' });
     }
     renderOps(req, res, 'settings', { flash: { category:'error', message:'原密码错误' }, title: '运营账号设置' });
@@ -427,6 +402,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('  🛠️  小伟播客 · 运营系统已启动');
   console.log(`  🌐 运营后台: http://localhost:${PORT}/ops/login`);
   console.log(`  🔌 端口: ${PORT}（独立进程）`);
-  console.log(`  🗄️  Supabase: ${supabase ? '已连接' : '未连接（仅界面，无数据）'}`);
+  console.log('  🗄️  数据库: 本地 SQLite（零外网依赖，工作区自包含）');
   console.log('='.repeat(50));
 });

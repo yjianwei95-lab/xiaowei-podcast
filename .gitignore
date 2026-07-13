@@ -1,5 +1,7 @@
 node_modules/
 *.db
+*.db-wal
+*.db-shm
 *.log
 public/lib/
 uploads/*
